@@ -12,7 +12,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+
 	"github.com/google/go-github/v57/github"
+
 	"github.com/isometry/gh-promotion-app/internal/ghapp"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
@@ -76,14 +78,14 @@ func (app *App) RetrieveGhAppCredsFromVault(ctx context.Context) error {
 }
 
 func (app *App) HandleEvent(ctx context.Context, request Request) (response Response, err error) {
-	slog.Info("Received request")
+	slog.Info("handling request")
 
 	eventType := request.Headers[strings.ToLower(github.EventTypeHeader)]
 	if eventType == "" {
 		slog.Warn("ERROR: missing event type")
 		return Response{Body: "missing event type", StatusCode: 400}, nil
 	}
-	slog.Info("Received event type", slog.String("eventType", eventType))
+	slog.Info("found event type", slog.String("eventType", eventType))
 
 	// retrieve GitHub App credentials if they are not already set
 	if app.ghAppCreds == nil {
