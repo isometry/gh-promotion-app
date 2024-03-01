@@ -17,7 +17,6 @@ import (
 	"github.com/google/go-github/v59/github"
 
 	"github.com/isometry/gh-promotion-app/internal/ghapp"
-	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
 
@@ -29,6 +28,7 @@ var HandledEventTypes = []string{
 	"check_suite",
 	"deployment_status",
 	"status",
+	"workflow_run",
 }
 
 type App struct {
@@ -185,8 +185,7 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		pCtx.HeadSHA = e.After
 
 		if stageIndex := promotion.StageIndex(*e.Ref); stageIndex != -1 && stageIndex < len(promotion.Stages)-1 {
-			baseRef := promotion.StageRef(promotion.Stages[stageIndex+1])
-			pCtx.BaseRef = &baseRef
+			pCtx.BaseRef = promotion.StageRef(promotion.Stages[stageIndex+1])
 		} else {
 			slog.Info("Ignoring push event on non-promotion branch", slog.String("ref", *pCtx.HeadRef), slog.String("sha", *pCtx.HeadSHA))
 			return Response{StatusCode: 204}, nil
@@ -209,10 +208,18 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 	case *github.PullRequestEvent:
 		slog.Info("Received pull request event")
 
+		switch *e.Action {
+		case "opened", "edited", "ready_for_review", "reopened", "unlocked":
+			// pass
+		default:
+			slog.Info("Ignoring non-opened pull request event", slog.String("action", *e.Action))
+			return Response{StatusCode: 204}, nil
+		}
+
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
-		pCtx.BaseRef = helpers.StandardRef(e.PullRequest.Base.Ref)
-		pCtx.HeadRef = helpers.StandardRef(e.PullRequest.Head.Ref)
+		pCtx.BaseRef = promotion.StageRef(*e.PullRequest.Base.Ref)
+		pCtx.HeadRef = promotion.StageRef(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
 	case *github.PullRequestReviewEvent:
@@ -225,8 +232,8 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
-		pCtx.BaseRef = helpers.StandardRef(e.PullRequest.Base.Ref)
-		pCtx.HeadRef = helpers.StandardRef(e.PullRequest.Head.Ref)
+		pCtx.BaseRef = promotion.StageRef(*e.PullRequest.Base.Ref)
+		pCtx.HeadRef = promotion.StageRef(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
 	case *github.CheckSuiteEvent:
@@ -243,8 +250,8 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 
 		for _, pr := range e.CheckSuite.PullRequests {
 			if *pr.Head.SHA == *pCtx.HeadSHA && promotion.IsPromotionRequest(pr) {
-				pCtx.BaseRef = pr.Base.Ref
-				pCtx.HeadRef = pr.Head.Ref
+				pCtx.BaseRef = promotion.StageRef(*pr.Base.Ref)
+				pCtx.HeadRef = promotion.StageRef(*pr.Head.Ref)
 				break
 			}
 		}
@@ -264,7 +271,7 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
-		pCtx.HeadRef = helpers.StandardRef(e.Deployment.Ref)
+		pCtx.HeadRef = promotion.StageRef(*e.Deployment.Ref)
 		pCtx.HeadSHA = e.Deployment.SHA
 
 	case *github.StatusEvent:
@@ -278,6 +285,31 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
 		pCtx.HeadSHA = e.SHA
+
+	case *github.WorkflowRunEvent:
+		slog.Info("Received workflow run event")
+
+		if *e.WorkflowRun.Status != "completed" || *e.WorkflowRun.Conclusion != "success" {
+			slog.Info("Ignoring incomplete workflow run event", slog.String("status", *e.WorkflowRun.Status), slog.String("conclusion", *e.WorkflowRun.Conclusion))
+			return Response{StatusCode: 204}, nil
+		}
+
+		pCtx.Owner = e.Repo.Owner.Login
+		pCtx.Repository = e.Repo.Name
+		pCtx.HeadSHA = e.WorkflowRun.HeadSHA
+
+		for _, pr := range e.WorkflowRun.PullRequests {
+			if *pr.Head.SHA == *pCtx.HeadSHA && promotion.IsPromotionRequest(pr) {
+				pCtx.BaseRef = promotion.StageRef(*pr.Base.Ref)
+				pCtx.HeadRef = promotion.StageRef(*pr.Head.Ref)
+				break
+			}
+		}
+
+		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
+			slog.Info("Ignoring check suite event without matching promotion request", slog.String("headSHA", *pCtx.HeadSHA))
+			return Response{StatusCode: 204}, nil
+		}
 
 	default:
 		slog.Warn("Unhandled event type", slog.String("eventType", eventType), slog.Any("event", e))

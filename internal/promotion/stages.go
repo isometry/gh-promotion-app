@@ -16,8 +16,9 @@ var (
 	}
 )
 
-func StageRef(stage string) string {
-	return "refs/heads/" + stage
+func StageRef(stage string) *string {
+	ref := "refs/heads/" + strings.TrimPrefix(stage, "refs/heads/")
+	return &ref
 }
 
 func StageName(ref string) string {
