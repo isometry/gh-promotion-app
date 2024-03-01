@@ -19,7 +19,7 @@ type Context struct {
 	HeadSHA    *string
 }
 
-func (p *Context) FindRequest() (pr *github.PullRequest, err error) {
+func (p *Context) FindRequest() (requestUrl *string, err error) {
 	slog.Info("finding promotion requests", slog.String("owner", *p.Owner), slog.String("repository", *p.Repository), slog.String("sha", *p.HeadSHA))
 	prListOptions := &github.PullRequestListOptions{
 		State: "open",
@@ -42,15 +42,12 @@ func (p *Context) FindRequest() (pr *github.PullRequest, err error) {
 		return nil, err
 	}
 
-	if len(prs) == 0 {
-		slog.Info("no pull requests found")
-		return nil, &NoPromotionRequestError{}
-	}
-
 	for _, pr := range prs {
 		if *pr.Head.SHA == *p.HeadSHA && IsPromotionRequest(pr) {
-			slog.Info("found matching promotion request", slog.Any("pr", *pr))
-			return pr, nil
+			slog.Info("found matching promotion request", slog.String("pr", *pr.URL))
+			p.HeadRef = pr.Head.Ref
+			p.BaseRef = pr.Base.Ref
+			return pr.URL, nil
 		}
 	}
 

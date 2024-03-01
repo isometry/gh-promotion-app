@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,12 +14,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"github.com/google/go-github/v57/github"
+	"github.com/google/go-github/v59/github"
 
 	"github.com/isometry/gh-promotion-app/internal/ghapp"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
+
+var HandledEventTypes = []string{
+	"push", // triggers promotion request creation
+	// all other events trigger promotion request fast forward
+	"pull_request",
+	"pull_request_review",
+	"check_suite",
+	"deployment_status",
+	"status",
+}
 
 type App struct {
 	AwsConfig  *aws.Config
@@ -34,6 +45,12 @@ type Request struct {
 type Response struct {
 	Body       string
 	StatusCode int
+}
+
+type EventInstallationId struct {
+	Installation struct {
+		ID *int64 `json:"id"`
+	} `json:"installation"`
 }
 
 func (app *App) RetrieveGhAppCreds(ctx context.Context) error {
@@ -116,38 +133,52 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 	}
 
 	if app.AwsConfig != nil {
-		// configure S3 client if it is not already set
-		if app.s3Client == nil {
-			app.s3Client = s3.NewFromConfig(*app.AwsConfig)
-		}
+		bucket := os.Getenv("S3_BUCKET_NAME")
+		if bucket != "" {
+			// configure S3 client if it is not already set
+			if app.s3Client == nil {
+				app.s3Client = s3.NewFromConfig(*app.AwsConfig)
+			}
 
-		key := fmt.Sprintf("%s.%s", time.Now().UTC().Format(time.RFC3339Nano), eventType)
-		_, err = app.s3Client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:      aws.String(os.Getenv("BUCKET_NAME")),
-			Key:         aws.String(key),
-			Body:        strings.NewReader(request.Body),
-			ContentType: aws.String("application/json"),
-		})
-		if err != nil {
-			slog.Error("ERROR: failed to store request object", slog.Any("error", err))
+			key := fmt.Sprintf("%s.%s", time.Now().UTC().Format(time.RFC3339Nano), eventType)
+			_, err = app.s3Client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:      &bucket,
+				Key:         aws.String(key),
+				Body:        strings.NewReader(request.Body),
+				ContentType: aws.String("application/json"),
+			})
+			if err != nil {
+				slog.Error("ERROR: failed to store request object", slog.Any("error", err))
+			}
 		}
 	}
 
-	var installationId *int64
+	if slices.Index(HandledEventTypes, eventType) == -1 {
+		slog.Info("ignoring event", slog.String("eventType", eventType))
+		return Response{StatusCode: 204}, nil
+	}
+
+	var EventInstallationId EventInstallationId
+	err = json.Unmarshal([]byte(request.Body), &EventInstallationId)
+	if err != nil {
+		slog.Warn("No installation ID found in event", slog.Any("error", err), slog.String("eventType", eventType))
+		return Response{StatusCode: 204}, nil
+	}
+	installationId := EventInstallationId.Installation.ID
+
+	// XXX: could/should we cache the installation client? …token TTL is only 1 hour
+	client, err := app.ghAppCreds.GetInstallationClient(*installationId)
+	if err != nil {
+		slog.Error("Failed to get installation client", slog.Any("error", err))
+		return Response{Body: err.Error(), StatusCode: 500}, nil
+	}
+	slog.Info("Got installation client")
+	pCtx.Client = client
 
 	switch e := event.(type) {
-	case *github.PingEvent:
-		slog.Info("Received ping event")
-		return Response{StatusCode: 204}, nil
-
-	case *github.InstallationEvent:
-		slog.Info("Received installation event")
-		return Response{StatusCode: 204}, nil
-
 	case *github.PushEvent:
 		slog.Info("Received push event")
 
-		installationId = e.Installation.ID
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
 		pCtx.HeadRef = e.Ref // already fully qualified
@@ -161,39 +192,23 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 			return Response{StatusCode: 204}, nil
 		}
 
-	case *github.DeploymentStatusEvent:
-		slog.Info("Received deployment status event")
-
-		if *e.DeploymentStatus.State != "success" {
-			slog.Info("Ignoring non-success deployment status event", slog.String("state", *e.DeploymentStatus.State))
+		if requestUrl, _ := pCtx.FindRequest(); requestUrl != nil {
+			// PR already exists covering this push event
+			slog.Info("Existing promotion request found, skipping creation")
 			return Response{StatusCode: 204}, nil
 		}
 
-		installationId = e.Installation.ID
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
-		pCtx.HeadRef = helpers.StandardRef(e.Deployment.Ref)
-		pCtx.HeadSHA = e.Deployment.SHA
-
-		// TODO: find base ref from deployment status event?
-
-	case *github.StatusEvent:
-		slog.Info("Received status event")
-
-		if *e.State != "success" {
-			slog.Info("Ignoring non-success status event", slog.String("state", *e.State))
-			return Response{StatusCode: 204}, nil
+		slog.Info("Creating promotion request")
+		pr, err := pCtx.CreateRequest()
+		if err != nil {
+			slog.Error("Failed to create promotion request", slog.Any("error", err))
+			return Response{Body: err.Error(), StatusCode: 500}, nil
 		}
-
-		installationId = e.Installation.ID
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
-		pCtx.HeadSHA = e.SHA
+		return Response{Body: pr.GetURL(), StatusCode: 201}, nil
 
 	case *github.PullRequestEvent:
 		slog.Info("Received pull request event")
 
-		installationId = e.Installation.ID
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
 		pCtx.BaseRef = helpers.StandardRef(e.PullRequest.Base.Ref)
@@ -208,20 +223,64 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 			return Response{StatusCode: 204}, nil
 		}
 
-		installationId = e.Installation.ID
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
 		pCtx.BaseRef = helpers.StandardRef(e.PullRequest.Base.Ref)
 		pCtx.HeadRef = helpers.StandardRef(e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
+	case *github.CheckSuiteEvent:
+		slog.Info("Received check suite event")
+
+		if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
+			slog.Info("Ignoring incomplete check suite event", slog.String("status", *e.CheckSuite.Status))
+			return Response{StatusCode: 204}, nil
+		}
+
+		pCtx.Owner = e.Repo.Owner.Login
+		pCtx.Repository = e.Repo.Name
+		pCtx.HeadSHA = e.CheckSuite.HeadSHA
+
+		for _, pr := range e.CheckSuite.PullRequests {
+			if *pr.Head.SHA == *pCtx.HeadSHA && promotion.IsPromotionRequest(pr) {
+				pCtx.BaseRef = pr.Base.Ref
+				pCtx.HeadRef = pr.Head.Ref
+				break
+			}
+		}
+
+		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
+			slog.Info("Ignoring check suite event without matching promotion request", slog.String("headSHA", *pCtx.HeadSHA))
+			return Response{StatusCode: 204}, nil
+		}
+
+	case *github.DeploymentStatusEvent:
+		slog.Info("Received deployment status event")
+
+		if *e.DeploymentStatus.State != "success" {
+			slog.Info("Ignoring non-success deployment status event", slog.String("state", *e.DeploymentStatus.State))
+			return Response{StatusCode: 204}, nil
+		}
+
+		pCtx.Owner = e.Repo.Owner.Login
+		pCtx.Repository = e.Repo.Name
+		pCtx.HeadRef = helpers.StandardRef(e.Deployment.Ref)
+		pCtx.HeadSHA = e.Deployment.SHA
+
+	case *github.StatusEvent:
+		slog.Info("Received status event")
+
+		if *e.State != "success" {
+			slog.Info("Ignoring non-success status event", slog.String("state", *e.State))
+			return Response{StatusCode: 204}, nil
+		}
+
+		pCtx.Owner = e.Repo.Owner.Login
+		pCtx.Repository = e.Repo.Name
+		pCtx.HeadSHA = e.SHA
+
 	default:
 		slog.Warn("Unhandled event type", slog.String("eventType", eventType), slog.Any("event", e))
-		return Response{StatusCode: 204}, nil
-	}
-
-	if installationId == nil {
-		slog.Warn("No installation ID found in event")
 		return Response{StatusCode: 204}, nil
 	}
 
@@ -232,44 +291,20 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 	}
 	slog.Info("Event relates to promotion ref", slog.String("headRef", *pCtx.HeadRef))
 
-	// XXX: could/should we cache the installation client?
-	client, err := app.ghAppCreds.GetInstallationClient(*installationId)
-	if err != nil {
-		slog.Error("Failed to get installation client", slog.Any("error", err))
+	// ignore events without an open promotion request
+	if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
+		// find matching promotion request by head SHA and populate missing refs
+		if _, err = pCtx.FindRequest(); err != nil {
+			slog.Error("Failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
+			return Response{StatusCode: 500}, nil
+		}
+	}
+
+	slog.Info("attempting fast forward")
+	if err = pCtx.FastForwardRefToSha(ctx); err != nil {
+		slog.Error("Failed to fast forward", slog.Any("error", err))
 		return Response{Body: err.Error(), StatusCode: 500}, nil
 	}
-	slog.Info("Got installation client")
-	pCtx.Client = client
-
-	// only push events trigger promotion request creation
-	switch eventType {
-	case "push":
-		slog.Info("Checking for existing promotion request")
-		if pr, _ := pCtx.FindRequest(); pr != nil {
-			// PR already exists covering this push event
-			slog.Info("Existing promotion request found, skipping creation")
-			return Response{StatusCode: 204}, nil
-		}
-
-		slog.Info("Creating promotion request")
-		pr, err := pCtx.CreateRequest()
-		if err != nil {
-			slog.Error("Failed to create promotion request", slog.Any("error", err))
-			return Response{Body: err.Error(), StatusCode: 500}, nil
-		}
-		return Response{Body: pr.GetURL(), StatusCode: 201}, nil
-
-	case "pull_request":
-		fallthrough
-	case "pull_request_review":
-		slog.Info("attempting fast forward")
-		err = pCtx.FastForwardRefToSha(ctx)
-		if err != nil {
-			slog.Error("Failed to fast forward", slog.Any("error", err))
-			return Response{Body: err.Error(), StatusCode: 500}, nil
-		}
-		return Response{StatusCode: 201}, nil
-	}
-
-	return Response{StatusCode: 204}, nil
+	slog.Info("fast forward complete", slog.String("headRef", *pCtx.HeadRef), slog.String("baseRef", *pCtx.BaseRef), slog.String("headSHA", *pCtx.HeadSHA))
+	return Response{Body: "promotion complete", StatusCode: 201}, nil
 }

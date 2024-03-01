@@ -31,7 +31,7 @@ func StageIndex(ref string) int {
 }
 
 func IsPromotionRequest(pr *github.PullRequest) bool {
-	// ensure p.HeadRef and baseRef are contiguous promotion stages
+	// ensure p.HeadRef and baseRef are contiguous promotion stages, and that the head ref is not the last stage
 	if headIndex := StageIndex(*pr.Head.Ref); headIndex != -1 && headIndex < len(Stages)-1 {
 		return Stages[headIndex+1] == StageName(*pr.Base.Ref)
 	}
