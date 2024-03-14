@@ -19,6 +19,34 @@ type Context struct {
 	HeadSHA    *string
 }
 
+func String(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func (p *Context) LogValue() slog.Value {
+	logAttr := make([]slog.Attr, 1, 6)
+	logAttr[0] = slog.String("eventType", String(p.EventType))
+	if p.Owner != nil {
+		logAttr = append(logAttr, slog.String("owner", String(p.Owner)))
+	}
+	if p.Repository != nil {
+		logAttr = append(logAttr, slog.String("repository", String(p.Repository)))
+	}
+	if p.HeadSHA != nil {
+		logAttr = append(logAttr, slog.String("headSHA", String(p.HeadSHA)))
+	}
+	if p.HeadRef != nil {
+		logAttr = append(logAttr, slog.String("headRef", String(p.HeadRef)))
+	}
+	if p.BaseRef != nil {
+		logAttr = append(logAttr, slog.String("baseRef", String(p.BaseRef)))
+	}
+	return slog.GroupValue(logAttr...)
+}
+
 func (p *Context) FindRequest() (requestUrl *string, err error) {
 	slog.Info("finding promotion requests", slog.String("owner", *p.Owner), slog.String("repository", *p.Repository), slog.String("sha", *p.HeadSHA))
 	prListOptions := &github.PullRequestListOptions{

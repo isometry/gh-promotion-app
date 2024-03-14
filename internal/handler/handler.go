@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -32,9 +33,12 @@ var HandledEventTypes = []string{
 }
 
 type App struct {
+	Logger     *slog.Logger
 	AwsConfig  *aws.Config
 	s3Client   *s3.Client
 	ghAppCreds *ghapp.GHAppCredentials
+	hmacSecret []byte
+	ghClient   *github.Client
 }
 
 type Request struct {
@@ -53,8 +57,31 @@ type EventInstallationId struct {
 	} `json:"installation"`
 }
 
+// type LoggerWithResponder struct{ *slog.Logger }
+
+// func (logger *LoggerWithResponder) InfoResponse(message string, statusCode int) (Response, error) {
+// 	logger.Info(message, slog.Int("statusCode", statusCode))
+// 	return Response{Body: message, StatusCode: statusCode}, nil
+// }
+
+// func (logger *LoggerWithResponder) ErrorResponse(message string, err error) (Response, error) {
+// 	logger.Error(message, slog.Any("error", err))
+// 	var statusCode int
+// 	switch err.(type) {
+// 	case *NoCredentialsError:
+// 		statusCode = http.StatusInternalServerError
+// 	case *NoInstallationIdError:
+// 		statusCode = http.StatusUnprocessableEntity
+// 	case *NoEventTypeError:
+// 		statusCode = http.StatusBadRequest
+// 	default:
+// 		statusCode = http.StatusUnprocessableEntity
+// 	}
+// 	return Response{Body: message, StatusCode: statusCode}, nil
+// }
+
 func (app *App) RetrieveGhAppCreds(ctx context.Context) error {
-	slog.Info("Retrieving GitHub App credentials")
+	app.Logger.Info("retrieving GitHub App credentials")
 
 	switch {
 	case app.AwsConfig != nil:
@@ -64,7 +91,7 @@ func (app *App) RetrieveGhAppCreds(ctx context.Context) error {
 }
 
 func (app *App) RetrieveGhAppCredsFromSSM(ctx context.Context) error {
-	slog.Info("Retrieving GitHub App credentials from SSM")
+	app.Logger.Info("Retrieving GitHub App credentials from SSM")
 
 	ssm_client := ssm.NewFromConfig(*app.AwsConfig)
 
@@ -73,7 +100,7 @@ func (app *App) RetrieveGhAppCredsFromSSM(ctx context.Context) error {
 		WithDecryption: aws.Bool(true),
 	})
 	if err != nil {
-		slog.Warn("failed to load SSM parameters", slog.Any("error", err))
+		app.Logger.Warn("failed to load SSM parameters", slog.Any("error", err))
 		return err
 	}
 
@@ -81,7 +108,7 @@ func (app *App) RetrieveGhAppCredsFromSSM(ctx context.Context) error {
 
 	var ghAppCreds ghapp.GHAppCredentials
 	if err = json.Unmarshal(ghaParams, &ghAppCreds); err != nil {
-		slog.Warn("failed to unmarshal SSM parameters", slog.Any("error", err))
+		app.Logger.Warn("failed to unmarshal SSM parameters", slog.Any("error", err))
 		return err
 	}
 
@@ -95,41 +122,47 @@ func (app *App) RetrieveGhAppCredsFromVault(ctx context.Context) error {
 }
 
 func (app *App) HandleEvent(ctx context.Context, request Request) (response Response, err error) {
-	slog.Info("handling request")
+	logger := app.Logger
+
+	logger.Info("handling request")
 
 	eventType := request.Headers[strings.ToLower(github.EventTypeHeader)]
 	if eventType == "" {
-		slog.Warn("ERROR: missing event type")
-		return Response{Body: "missing event type", StatusCode: 400}, nil
+		logger.Warn("missing event type")
+		return Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity}, nil
 	}
-	slog.Info("found event type", slog.String("eventType", eventType))
+
+	pCtx := promotion.Context{
+		EventType: &eventType,
+	}
+
+	logger = logger.With(slog.Any("context", pCtx))
+
+	if slices.Index(HandledEventTypes, eventType) == -1 {
+		logger.Info("unhandled event")
+		return Response{StatusCode: http.StatusUnprocessableEntity}, nil
+	}
 
 	// retrieve GitHub App credentials if they are not already set
 	if app.ghAppCreds == nil {
 		err = app.RetrieveGhAppCreds(ctx)
 		if err != nil {
-			slog.Warn("ERROR: failed to retrieve GitHub App credentials", slog.Any("error", err))
-			return Response{StatusCode: 500}, nil
+			logger.Error("retrieving credentials", slog.Any("error", err))
+			return Response{StatusCode: http.StatusInternalServerError}, nil
 		}
 	}
 
-	err = app.ghAppCreds.ValidateSignature([]byte(request.Body), request.Headers)
+	err = app.ghAppCreds.WebhookSecret.ValidateSignature([]byte(request.Body), request.Headers)
 	if err != nil {
-		slog.Warn("ERROR: validating signature", slog.Any("error", err))
-		return Response{Body: err.Error(), StatusCode: 401}, nil
+		logger.Error("validating signature", slog.Any("error", err))
+		return Response{Body: err.Error(), StatusCode: http.StatusUnauthorized}, nil
 	}
-	slog.Info("Request is valid")
-
-	// request is valid
+	logger.Debug("request is valid")
 
 	event, err := github.ParseWebHook(eventType, []byte(request.Body))
 	if err != nil {
-		slog.Error("ERROR: parsing payload", slog.Any("error", err))
-		return Response{Body: err.Error(), StatusCode: 400}, nil
-	}
-
-	pCtx := promotion.Context{
-		EventType: &eventType,
+		logger.Error("parsing webhook payload", slog.Any("error", err))
+		return Response{Body: err.Error(), StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
 	if app.AwsConfig != nil {
@@ -148,37 +181,31 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 				ContentType: aws.String("application/json"),
 			})
 			if err != nil {
-				slog.Error("ERROR: failed to store request object", slog.Any("error", err))
+				logger.Error("logging request", slog.Any("error", err))
 			}
 		}
-	}
-
-	if slices.Index(HandledEventTypes, eventType) == -1 {
-		slog.Info("ignoring event", slog.String("eventType", eventType))
-		return Response{StatusCode: 204}, nil
 	}
 
 	var EventInstallationId EventInstallationId
 	err = json.Unmarshal([]byte(request.Body), &EventInstallationId)
 	if err != nil {
-		slog.Warn("No installation ID found in event", slog.Any("error", err), slog.String("eventType", eventType))
-		return Response{StatusCode: 204}, nil
+		logger.Warn("no installation ID found", slog.Any("error", err))
+		return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 	installationId := EventInstallationId.Installation.ID
+
+	logger = logger.With(slog.Int64("installationId", *installationId))
 
 	// XXX: could/should we cache the installation client? …token TTL is only 1 hour
 	client, err := app.ghAppCreds.GetInstallationClient(*installationId)
 	if err != nil {
-		slog.Error("Failed to get installation client", slog.Any("error", err))
-		return Response{Body: err.Error(), StatusCode: 500}, nil
+		logger.Error("failed to get installation client", slog.Any("error", err))
+		return Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 	}
-	slog.Info("Got installation client")
 	pCtx.Client = client
 
 	switch e := event.(type) {
 	case *github.PushEvent:
-		slog.Info("Received push event")
-
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
 		pCtx.HeadRef = e.Ref // already fully qualified
@@ -187,33 +214,36 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		if stageIndex := promotion.StageIndex(*e.Ref); stageIndex != -1 && stageIndex < len(promotion.Stages)-1 {
 			pCtx.BaseRef = promotion.StageRef(promotion.Stages[stageIndex+1])
 		} else {
-			slog.Info("Ignoring push event on non-promotion branch", slog.String("ref", *pCtx.HeadRef), slog.String("sha", *pCtx.HeadSHA))
-			return Response{StatusCode: 204}, nil
+			msg := "ignoring push event on non-promotion branch"
+			logger.Info(msg)
+			return Response{Body: msg, StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		if requestUrl, _ := pCtx.FindRequest(); requestUrl != nil {
 			// PR already exists covering this push event
-			slog.Info("Existing promotion request found, skipping creation")
-			return Response{StatusCode: 204}, nil
+			logger.Info("skipping recreation of existing promotion request")
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		slog.Info("Creating promotion request")
+		logger.Info("creating promotion request")
 		pr, err := pCtx.CreateRequest()
 		if err != nil {
-			slog.Error("Failed to create promotion request", slog.Any("error", err))
-			return Response{Body: err.Error(), StatusCode: 500}, nil
+			logger.Error("failed to create promotion request", slog.Any("error", err))
+			return Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 		}
-		return Response{Body: pr.GetURL(), StatusCode: 201}, nil
+		logger.Info("created promotion request", slog.String("url", *pr.URL))
+		return Response{
+			Body:       fmt.Sprintf("Created promotion request: %s", pr.GetURL()),
+			StatusCode: http.StatusCreated,
+		}, nil
 
 	case *github.PullRequestEvent:
-		slog.Info("Received pull request event")
-
 		switch *e.Action {
 		case "opened", "edited", "ready_for_review", "reopened", "unlocked":
 			// pass
 		default:
-			slog.Info("Ignoring non-opened pull request event", slog.String("action", *e.Action))
-			return Response{StatusCode: 204}, nil
+			logger.Info("ignoring pull request event", slog.String("action", *e.Action))
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -221,13 +251,13 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		pCtx.BaseRef = promotion.StageRef(*e.PullRequest.Base.Ref)
 		pCtx.HeadRef = promotion.StageRef(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
+
+		logger.Info("parsed pull request event")
 
 	case *github.PullRequestReviewEvent:
-		slog.Info("Received pull request review event")
-
 		if *e.Review.State != "approved" {
-			slog.Info("Ignoring non-approved pull request review event", slog.String("state", *e.Review.State))
-			return Response{StatusCode: 204}, nil
+			logger.Info("Ignoring non-approved pull request review event", slog.String("state", *e.Review.State))
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -236,12 +266,12 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		pCtx.HeadRef = promotion.StageRef(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
-	case *github.CheckSuiteEvent:
-		slog.Info("Received check suite event")
+		logger.Info("parsed pull request review event")
 
+	case *github.CheckSuiteEvent:
 		if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
-			slog.Info("Ignoring incomplete check suite event", slog.String("status", *e.CheckSuite.Status))
-			return Response{StatusCode: 204}, nil
+			logger.Info("Ignoring incomplete check suite event", slog.String("status", *e.CheckSuite.Status))
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -257,16 +287,17 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		}
 
 		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
-			slog.Info("Ignoring check suite event without matching promotion request", slog.String("headSHA", *pCtx.HeadSHA))
-			return Response{StatusCode: 204}, nil
+			logger.Info("ignoring check suite event without matching promotion request")
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-	case *github.DeploymentStatusEvent:
-		slog.Info("Received deployment status event")
+		logger.Info("parsed check suite event")
 
-		if *e.DeploymentStatus.State != "success" {
-			slog.Info("Ignoring non-success deployment status event", slog.String("state", *e.DeploymentStatus.State))
-			return Response{StatusCode: 204}, nil
+	case *github.DeploymentStatusEvent:
+		state := *e.DeploymentStatus.State
+		if state != "success" {
+			logger.Info("Ignoring non-success deployment status event", slog.String("state", state))
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -274,24 +305,32 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		pCtx.HeadRef = promotion.StageRef(*e.Deployment.Ref)
 		pCtx.HeadSHA = e.Deployment.SHA
 
-	case *github.StatusEvent:
-		slog.Info("Received status event")
+		logger.Info("parsed deployment status event")
 
-		if *e.State != "success" {
-			slog.Info("Ignoring non-success status event", slog.String("state", *e.State))
-			return Response{StatusCode: 204}, nil
+	case *github.StatusEvent:
+		state := *e.State
+		if state != "success" {
+			logger.Info("Ignoring non-success status event", slog.String("state", state))
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
 		pCtx.HeadSHA = e.SHA
 
-	case *github.WorkflowRunEvent:
-		slog.Info("Received workflow run event")
+		logger.Info("parsed status event")
 
-		if *e.WorkflowRun.Status != "completed" || *e.WorkflowRun.Conclusion != "success" {
-			slog.Info("Ignoring incomplete workflow run event", slog.String("status", *e.WorkflowRun.Status), slog.String("conclusion", *e.WorkflowRun.Conclusion))
-			return Response{StatusCode: 204}, nil
+	case *github.WorkflowRunEvent:
+		status := *e.WorkflowRun.Status
+		if status != "completed" {
+			logger.Info("ignoring incomplete workflow run event", slog.String("status", status))
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
+		}
+
+		conclusion := *e.WorkflowRun.Conclusion
+		if conclusion != "success" {
+			logger.Info("ignoring unsuccessful workflow run event", slog.String("conclusion", conclusion))
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -307,36 +346,31 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 		}
 
 		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
-			slog.Info("Ignoring check suite event without matching promotion request", slog.String("headSHA", *pCtx.HeadSHA))
-			return Response{StatusCode: 204}, nil
+			logger.Info("Ignoring check suite event without matching promotion request")
+			return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-	default:
-		slog.Warn("Unhandled event type", slog.String("eventType", eventType), slog.Any("event", e))
-		return Response{StatusCode: 204}, nil
-	}
+		logger.Info("parsed workflow run event")
 
-	// ignore events on non-promotion heads
-	if !promotion.IsPromoteableRef(*pCtx.HeadRef) {
-		slog.Info("Ignoring event on non-promotion head ref", slog.String("event", eventType), slog.String("headRef", *pCtx.HeadRef))
-		return Response{StatusCode: 204}, nil
+	default:
+		logger.Warn("unhandled event type", slog.String("eventType", eventType))
+		return Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
-	slog.Info("Event relates to promotion ref", slog.String("headRef", *pCtx.HeadRef))
 
 	// ignore events without an open promotion request
 	if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
 		// find matching promotion request by head SHA and populate missing refs
 		if _, err = pCtx.FindRequest(); err != nil {
-			slog.Error("Failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
-			return Response{StatusCode: 500}, nil
+			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
+			return Response{StatusCode: http.StatusInternalServerError}, nil
 		}
 	}
 
-	slog.Info("attempting fast forward")
+	logger.Info("attempting fast forward")
 	if err = pCtx.FastForwardRefToSha(ctx); err != nil {
-		slog.Error("Failed to fast forward", slog.Any("error", err))
-		return Response{Body: err.Error(), StatusCode: 500}, nil
+		logger.Error("Failed to fast forward", slog.Any("error", err))
+		return Response{Body: err.Error(), StatusCode: http.StatusFailedDependency}, nil
 	}
-	slog.Info("fast forward complete", slog.String("headRef", *pCtx.HeadRef), slog.String("baseRef", *pCtx.BaseRef), slog.String("headSHA", *pCtx.HeadSHA))
-	return Response{Body: "promotion complete", StatusCode: 201}, nil
+	logger.Info("fast forward complete")
+	return Response{Body: "Promotion complete", StatusCode: http.StatusNoContent}, nil
 }

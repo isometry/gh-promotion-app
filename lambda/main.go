@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"os"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -19,12 +20,13 @@ type Runtime struct {
 }
 
 func (r *Runtime) handleEvent(ctx context.Context, request Request) (response Response, err error) {
-	slog.Info("Received API Gateway V2 request")
+	r.app.Logger.Info("received API Gateway V2 request")
 
 	hResponse, err := r.app.HandleEvent(ctx, handler.Request{
 		Body:    request.Body,
 		Headers: request.Headers,
 	})
+	r.app.Logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
 	return Response{
 		Body:       hResponse.Body,
 		StatusCode: hResponse.StatusCode,
@@ -33,18 +35,21 @@ func (r *Runtime) handleEvent(ctx context.Context, request Request) (response Re
 
 func main() {
 	ctx := context.TODO()
-	slog.Info("spawned lambda")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	logger.Info("spawned lambda")
 
 	cfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		slog.Warn("failed to load AWS configuration", slog.Any("error", err))
+		logger.Warn("failed to load AWS configuration", slog.Any("error", err))
 		panic(err)
 	}
 
-	slog.Info("loaded AWS configuration")
+	logger.Info("loaded AWS configuration")
 
 	runtime := Runtime{
 		app: handler.App{
+			Logger:    logger,
 			AwsConfig: &cfg,
 		},
 	}
