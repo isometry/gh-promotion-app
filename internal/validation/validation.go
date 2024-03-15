@@ -9,9 +9,12 @@ import (
 
 type WebhookSecret string
 
-func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) (err error) {
-	signature := headers[strings.ToLower(github.SHA256SignatureHeader)]
-	if signature == "" {
+func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) error {
+	if s == nil {
+		return fmt.Errorf("missing webhook secret")
+	}
+	signature, found := headers[strings.ToLower(github.SHA256SignatureHeader)]
+	if !found {
 		return fmt.Errorf("missing HMAC-SHA256 signature")
 	}
 

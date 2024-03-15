@@ -2,21 +2,48 @@ package main
 
 import (
 	"context"
-	"log/slog"
-	"os"
-
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/isometry/gh-promotion-app/internal/handler"
-
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/isometry/gh-promotion-app/internal/handler"
+	"github.com/isometry/gh-promotion-app/internal/promotion"
+	"log/slog"
+	"os"
 )
 
-type Request = events.APIGatewayV2HTTPRequest
-type Response = events.APIGatewayV2HTTPResponse
+type (
+	Request  = events.APIGatewayV2HTTPRequest
+	Response = events.APIGatewayV2HTTPResponse
+)
 
 type Runtime struct {
-	app handler.App
+	app *handler.App
+}
+
+func main() {
+	ctx := context.Background()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     slog.LevelDebug,
+	})).With("mode", "lambda")
+	logger.Info("spawned...")
+
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		logger.Error("failed to load AWS configuration", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	logger.Info("loaded AWS configuration")
+	runtime := Runtime{
+		app: &handler.App{
+			Logger:    logger,
+			AwsConfig: &cfg,
+			Promoter:  promotion.NewStagePromoter(promotion.DefaultStages),
+		},
+	}
+
+	lambda.Start(runtime.handleEvent)
 }
 
 func (r *Runtime) handleEvent(ctx context.Context, request Request) (response Response, err error) {
@@ -31,28 +58,4 @@ func (r *Runtime) handleEvent(ctx context.Context, request Request) (response Re
 		Body:       hResponse.Body,
 		StatusCode: hResponse.StatusCode,
 	}, err
-}
-
-func main() {
-	ctx := context.TODO()
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
-	logger.Info("spawned lambda")
-
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
-	if err != nil {
-		logger.Warn("failed to load AWS configuration", slog.Any("error", err))
-		panic(err)
-	}
-
-	logger.Info("loaded AWS configuration")
-
-	runtime := Runtime{
-		app: handler.App{
-			Logger:    logger,
-			AwsConfig: &cfg,
-		},
-	}
-
-	lambda.Start(runtime.handleEvent)
 }

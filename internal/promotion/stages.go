@@ -8,13 +8,21 @@ import (
 )
 
 var (
-	Stages = []string{
+	DefaultStages = []string{
 		"main",
 		"staging",
 		"canary",
 		"production",
 	}
 )
+
+type Promoter struct {
+	stages []string
+}
+
+func NewStagePromoter(stages []string) *Promoter {
+	return &Promoter{stages}
+}
 
 func StageRef(stage string) *string {
 	ref := "refs/heads/" + strings.TrimPrefix(stage, "refs/heads/")
@@ -25,25 +33,25 @@ func StageName(ref string) string {
 	return strings.TrimPrefix(ref, "refs/heads/")
 }
 
-func StageIndex(ref string) int {
+func (sp *Promoter) StageIndex(ref string) int {
 	// find the index of the head ref in the promotion stages
 	// -1 indicates that the head ref is not a promotion stage
-	return slices.Index(Stages, StageName(ref))
+	return slices.Index(sp.stages, StageName(ref))
 }
 
-func IsPromotionRequest(pr *github.PullRequest) bool {
+func (sp *Promoter) IsPromotionRequest(pr *github.PullRequest) bool {
 	// ensure p.HeadRef and baseRef are contiguous promotion stages, and that the head ref is not the last stage
-	if headIndex := StageIndex(*pr.Head.Ref); headIndex != -1 && headIndex < len(Stages)-1 {
-		return Stages[headIndex+1] == StageName(*pr.Base.Ref)
+	if headIndex := sp.StageIndex(*pr.Head.Ref); headIndex != -1 && headIndex < len(sp.stages)-1 {
+		return sp.stages[headIndex+1] == StageName(*pr.Base.Ref)
 	}
 
 	return false
 }
 
-func IsPromoteableRef(ref string) bool {
-	if headIndex := StageIndex(ref); headIndex != -1 && headIndex < len(Stages)-1 {
-		return true
+func (sp *Promoter) IsPromotableRef(ref string) (string, bool) {
+	if headIndex := sp.StageIndex(ref); headIndex != -1 && headIndex < len(sp.stages)-1 {
+		return sp.stages[headIndex+1], true
 	}
 
-	return false
+	return "", false
 }

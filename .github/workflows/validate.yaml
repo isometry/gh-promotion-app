@@ -1,0 +1,19 @@
+---
+name: Validate
+on:
+  workflow_call:
+jobs:
+  Validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+      - name: ⚙️ Run test suite
+        run: |
+          go test -v ./...
+        env:
+          GITHUB_TOKEN: ${{ secrets.TEST_SUITE_PAT }}
+          TEST_SUITE_REPOSITORY: ${{ secrets.TEST_SUITE_REPOSITORY }}

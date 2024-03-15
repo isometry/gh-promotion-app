@@ -3,20 +3,26 @@ package promotion
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"strings"
-
 	"github.com/google/go-github/v59/github"
+	"github.com/pkg/errors"
+	"github.com/shurcooL/githubv4"
+	"golang.org/x/oauth2"
+	"log/slog"
+	"os"
+	"strings"
 )
 
 type Context struct {
-	Client     *github.Client
-	EventType  *string
-	Owner      *string
-	Repository *string
-	BaseRef    *string
-	HeadRef    *string
-	HeadSHA    *string
+	Client        *github.Client
+	ClientGraphQL *githubv4.Client
+	Logger        *slog.Logger
+	EventType     *string
+	Owner         *string
+	Repository    *string
+	BaseRef       *string
+	HeadRef       *string
+	HeadSHA       *string
+	Promoter      *Promoter
 }
 
 func String(p *string) string {
@@ -47,40 +53,40 @@ func (p *Context) LogValue() slog.Value {
 	return slog.GroupValue(logAttr...)
 }
 
-func (p *Context) FindRequest() (requestUrl *string, err error) {
-	slog.Info("finding promotion requests", slog.String("owner", *p.Owner), slog.String("repository", *p.Repository), slog.String("sha", *p.HeadSHA))
+func (p *Context) FindPullRequest(ctx context.Context) (pr *github.PullRequest, err error) {
+	p.Logger.Info("finding promotion requests", slog.String("owner", *p.Owner), slog.String("repository", *p.Repository))
 	prListOptions := &github.PullRequestListOptions{
 		State: "open",
 	}
 
-	if p.HeadRef != nil {
-		slog.Info("limiting promotion request search to head ref", slog.String("head", *p.HeadRef))
+	if p.HeadRef != nil && *p.HeadRef != "" {
+		p.Logger.Info("limiting promotion request search to head ref", slog.String("head", *p.HeadRef))
 		prListOptions.Head = *p.HeadRef
 	}
 
 	if p.BaseRef != nil {
 		// limit scope if we have a base ref
-		slog.Info("limiting promotion request search to base ref", slog.String("base", *p.BaseRef))
+		p.Logger.Info("limiting promotion request search to base ref", slog.String("base", *p.BaseRef))
 		prListOptions.Base = *p.BaseRef
 	}
 
-	prs, _, err := p.Client.PullRequests.List(context.Background(), *p.Owner, *p.Repository, prListOptions)
+	prs, _, err := p.Client.PullRequests.List(ctx, *p.Owner, *p.Repository, prListOptions)
 	if err != nil {
-		slog.Error("failed to list pull requests", slog.Any("error", err))
+		p.Logger.Error("failed to list pull requests", slog.Any("error", err))
 		return nil, err
 	}
 
 	for _, pr := range prs {
-		if *pr.Head.SHA == *p.HeadSHA && IsPromotionRequest(pr) {
-			slog.Info("found matching promotion request", slog.String("pr", *pr.URL))
+		if *pr.Head.SHA == *p.HeadSHA && p.Promoter.IsPromotionRequest(pr) {
+			p.Logger.Info("found matching promotion request", slog.String("pr", *pr.URL))
 			p.HeadRef = pr.Head.Ref
 			p.BaseRef = pr.Base.Ref
-			return pr.URL, nil
+			return pr, nil
 		}
 	}
 
-	slog.Info("no matching promotion request found")
-	return nil, &NoPromotionRequestError{}
+	p.Logger.Info("no matching promotion request found")
+	return nil, new(NoPromotionRequestError)
 }
 
 func (p *Context) RequestTitle() *string {
@@ -92,12 +98,14 @@ func (p *Context) RequestTitle() *string {
 	return &title
 }
 
-func (p *Context) CreateRequest() (pr *github.PullRequest, err error) {
-	pr, _, err = p.Client.PullRequests.Create(context.Background(), *p.Owner, *p.Repository, &github.NewPullRequest{
-		Title: p.RequestTitle(),
-		Head:  p.HeadRef,
-		Base:  p.BaseRef,
+func (p *Context) CreatePullRequest(ctx context.Context) (*github.PullRequest, error) {
+	pr, _, err := p.Client.PullRequests.Create(ctx, *p.Owner, *p.Repository, &github.NewPullRequest{
+		Title:               p.RequestTitle(),
+		Head:                p.HeadRef,
+		Base:                p.BaseRef,
+		MaintainerCanModify: github.Bool(false),
 	})
+
 	if err != nil {
 		return nil, err
 	}
@@ -107,19 +115,77 @@ func (p *Context) CreateRequest() (pr *github.PullRequest, err error) {
 
 // FastForwardRefToSha pushes a commit to a ref, used to merge an open pull request via fast-forward
 func (p *Context) FastForwardRefToSha(ctx context.Context) error {
-	slog.Info("attempting fast forward", slog.String("headRef", *p.HeadRef), slog.String("headSHA", *p.HeadSHA))
+	ctxLogger := p.Logger.With(slog.String("headRef", *p.HeadRef), slog.String("headSHA", *p.HeadSHA), slog.String("owner", *p.Owner), slog.String("repository", *p.Repository))
+	ctxLogger.Info("attempting fast forward", slog.String("headRef", *p.HeadRef), slog.String("headSHA", *p.HeadSHA))
 	reference := github.Reference{
-		Ref: p.BaseRef,
+		Ref: StageRef(*p.BaseRef),
 		Object: &github.GitObject{
-			SHA: github.String(*p.HeadSHA),
+			SHA: p.HeadSHA,
 		},
 	}
 	_, _, err := p.Client.Git.UpdateRef(ctx, *p.Owner, *p.Repository, &reference, false)
 	if err != nil {
-		slog.Info("failed fast forward", slog.String("headRef", *p.HeadRef), slog.String("headSHA", *p.HeadSHA), slog.Any("error", err))
+		ctxLogger.Error("failed fast forward", slog.Any("error", err))
 		return err
 	}
 
-	slog.Info("successful fast forward", slog.String("headRef", *p.HeadRef), slog.String("headSHA", *p.HeadSHA))
+	ctxLogger.Info("successful fast forward")
 	return nil
+}
+
+func (p *Context) EmptyCommitOnBranch(ctx context.Context, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
+	return EmptyCommitOnBranch(ctx, p.ClientGraphQL, createCommitOnBranchInput)
+}
+
+type CommitOnBranchRequest struct {
+	Owner, Repository, Branch, Message string
+}
+
+func EmptyCommitOnBranchWithDefaultClient(ctx context.Context, req githubv4.CreateCommitOnBranchInput) (string, error) {
+	src := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+	)
+
+	httpClient := oauth2.NewClient(context.Background(), src)
+	client := githubv4.NewClient(httpClient)
+	return EmptyCommitOnBranch(ctx, client, req)
+}
+
+func EmptyCommitOnBranch(ctx context.Context, client *githubv4.Client, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
+	// Fetch the current head commit of the branch
+	var query struct {
+		Repository struct {
+			Ref struct {
+				Target struct {
+					Oid githubv4.GitObjectID
+				} `graphql:"target"`
+			} `graphql:"ref(qualifiedName: $qualifiedName)"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+
+	parts := strings.Split(string(*createCommitOnBranchInput.Branch.RepositoryNameWithOwner), "/")
+	variables := map[string]any{
+		"owner":         githubv4.String(parts[0]),
+		"name":          githubv4.String(parts[1]),
+		"qualifiedName": *createCommitOnBranchInput.Branch.BranchName,
+	}
+
+	if err := client.Query(ctx, &query, variables); err != nil {
+		return "", errors.Wrap(err, "GetBranchHeadCommit: failed to fetch the current head commit of the branch")
+	}
+
+	createCommitOnBranchInput.ExpectedHeadOid = query.Repository.Ref.Target.Oid
+	var mutation struct {
+		CreateCommitOnBranch struct {
+			Commit struct {
+				Oid githubv4.GitObjectID
+				Url githubv4.String
+			}
+		} `graphql:"createCommitOnBranch(input: $input)"`
+	}
+
+	if err := client.Mutate(ctx, &mutation, createCommitOnBranchInput, nil); err != nil {
+		return "", errors.Wrap(err, "failed to create commit on branch")
+	}
+	return string(mutation.CreateCommitOnBranch.Commit.Oid), nil
 }
