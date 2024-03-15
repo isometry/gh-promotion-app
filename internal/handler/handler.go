@@ -193,7 +193,7 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 	pCtx := promotion.Context{
 		EventType: &eventType,
 		Logger:    logger.With("routine", "promotion.Context"),
-		Client:    app.ghClient,
+		ClientV3:  app.ghClient,
 		ClientV4:  app.ghQLClient,
 		Promoter:  app.Promoter,
 	}

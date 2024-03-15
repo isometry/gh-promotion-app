@@ -31,7 +31,7 @@ func TestString(t *testing.T) {
 	}
 }
 
-// The 'GitHub/Client' is not an interface and thus cannot be mocked.
+// The 'GitHub/ClientV3' is not an interface and thus cannot be mocked.
 
 func TestContext_FindRequest(t *testing.T) {
 	t.Skip("not implemented")

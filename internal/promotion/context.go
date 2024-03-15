@@ -13,7 +13,7 @@ import (
 )
 
 type Context struct {
-	Client     *github.Client
+	ClientV3   *github.Client
 	ClientV4   *githubv4.Client
 	Logger     *slog.Logger
 	EventType  *string
@@ -70,7 +70,7 @@ func (p *Context) FindPullRequest(ctx context.Context) (pr *github.PullRequest, 
 		prListOptions.Base = *p.BaseRef
 	}
 
-	prs, _, err := p.Client.PullRequests.List(ctx, *p.Owner, *p.Repository, prListOptions)
+	prs, _, err := p.ClientV3.PullRequests.List(ctx, *p.Owner, *p.Repository, prListOptions)
 	if err != nil {
 		p.Logger.Error("failed to list pull requests", slog.Any("error", err))
 		return nil, err
@@ -99,7 +99,7 @@ func (p *Context) RequestTitle() *string {
 }
 
 func (p *Context) CreatePullRequest(ctx context.Context) (*github.PullRequest, error) {
-	pr, _, err := p.Client.PullRequests.Create(ctx, *p.Owner, *p.Repository, &github.NewPullRequest{
+	pr, _, err := p.ClientV3.PullRequests.Create(ctx, *p.Owner, *p.Repository, &github.NewPullRequest{
 		Title:               p.RequestTitle(),
 		Head:                p.HeadRef,
 		Base:                p.BaseRef,
@@ -123,7 +123,7 @@ func (p *Context) FastForwardRefToSha(ctx context.Context) error {
 			SHA: p.HeadSHA,
 		},
 	}
-	_, _, err := p.Client.Git.UpdateRef(ctx, *p.Owner, *p.Repository, &reference, false)
+	_, _, err := p.ClientV3.Git.UpdateRef(ctx, *p.Owner, *p.Repository, &reference, false)
 	if err != nil {
 		ctxLogger.Error("failed fast forward", slog.Any("error", err))
 		return err
