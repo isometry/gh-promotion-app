@@ -133,7 +133,6 @@
   "enterprise": {
     "id": 13876,
     "slug": "{{ .Owner }}",
-    "name": "Nexthink SA",
     "node_id": "E_kgDNNjQ",
     "avatar_url": "https://avatars.githubusercontent.com/b/13876?v=4",
     "description": "",
