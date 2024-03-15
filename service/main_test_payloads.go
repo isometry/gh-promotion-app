@@ -16,7 +16,7 @@ var validPayloadDeploymentStatusSuccess string
 //go:embed tests/push_event.json
 var validPayloadPushEvent string
 
-func generateSha256(payload, key string) string {
+func generateHmacSha256(payload, key string) string {
 	mac := hmac.New(sha256.New, []byte(key))
 
 	mac.Write([]byte(payload))

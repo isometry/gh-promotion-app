@@ -130,7 +130,7 @@ func runTest(t *testing.T, tc testCase, headRef string, level slog.Leveler) *htt
 		defer func() {
 			_ = os.Unsetenv("GITHUB_WEBHOOK_SECRET")
 		}()
-		tc.Headers[github.SHA256SignatureHeader] = fmt.Sprintf("sha256=%s", generateSha256(payload, dummyWebhookKey))
+		tc.Headers[github.SHA256SignatureHeader] = fmt.Sprintf("sha256=%s", generateHmacSha256(payload, dummyWebhookKey))
 	}
 	runtime := setupRuntime(tc, level)
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
