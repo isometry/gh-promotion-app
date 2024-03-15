@@ -13,16 +13,16 @@ import (
 )
 
 type Context struct {
-	Client        *github.Client
-	ClientGraphQL *githubv4.Client
-	Logger        *slog.Logger
-	EventType     *string
-	Owner         *string
-	Repository    *string
-	BaseRef       *string
-	HeadRef       *string
-	HeadSHA       *string
-	Promoter      *Promoter
+	Client     *github.Client
+	ClientV4   *githubv4.Client
+	Logger     *slog.Logger
+	EventType  *string
+	Owner      *string
+	Repository *string
+	BaseRef    *string
+	HeadRef    *string
+	HeadSHA    *string
+	Promoter   *Promoter
 }
 
 func String(p *string) string {
@@ -134,7 +134,7 @@ func (p *Context) FastForwardRefToSha(ctx context.Context) error {
 }
 
 func (p *Context) EmptyCommitOnBranch(ctx context.Context, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
-	return EmptyCommitOnBranch(ctx, p.ClientGraphQL, createCommitOnBranchInput)
+	return EmptyCommitOnBranch(ctx, p.ClientV4, createCommitOnBranchInput)
 }
 
 type CommitOnBranchRequest struct {

@@ -191,11 +191,11 @@ func (app *App) HandleEvent(ctx context.Context, request Request) (response Resp
 	}
 
 	pCtx := promotion.Context{
-		EventType:     &eventType,
-		Logger:        logger.With("routine", "promotion.Context"),
-		Client:        app.ghClient,
-		ClientGraphQL: app.ghQLClient,
-		Promoter:      app.Promoter,
+		EventType: &eventType,
+		Logger:    logger.With("routine", "promotion.Context"),
+		Client:    app.ghClient,
+		ClientV4:  app.ghQLClient,
+		Promoter:  app.Promoter,
 	}
 
 	logger = logger.With(slog.Any("context", pCtx))
