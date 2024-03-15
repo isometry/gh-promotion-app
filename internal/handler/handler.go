@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"github.com/google/go-github/v59/github"
+	"github.com/google/go-github/v60/github"
 
 	"github.com/isometry/gh-promotion-app/internal/ghapp"
 	"github.com/isometry/gh-promotion-app/internal/promotion"

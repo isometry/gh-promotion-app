@@ -12,7 +12,7 @@ import (
 	"os"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v59/github"
+	"github.com/google/go-github/v60/github"
 	"github.com/isometry/gh-promotion-app/internal/validation"
 )
 
