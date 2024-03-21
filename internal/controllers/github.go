@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/pkg/errors"
@@ -15,11 +16,17 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v60/github"
 	"github.com/isometry/gh-promotion-app/internal/validation"
 )
+
+type EventInstallationId struct {
+	Installation struct {
+		ID *int64 `json:"id"`
+	} `json:"installation"`
+}
 
 type GHOption func(*GitHub)
 
@@ -36,6 +43,24 @@ func WithApplication(appId int64, privateKey string) GHOption {
 	}
 }
 
+func WithAuthMode(mode string) GHOption {
+	return func(a *GitHub) {
+		a.authMode = mode
+	}
+}
+
+func WithAWSController(aws *AWS) GHOption {
+	return func(a *GitHub) {
+		a.awsController = aws
+	}
+}
+
+func WithSSMKey(key string) GHOption {
+	return func(a *GitHub) {
+		a.ssmKey = key
+	}
+}
+
 func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 	_inst := new(GitHub)
 	for _, opt := range opts {
@@ -49,19 +74,21 @@ func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 			Level: slog.LevelDebug,
 		})).With("controller", "github")
 	}
-	if err := _inst.initialiseClients(opts...); err != nil {
-		return nil, errors.Wrap(err, "controller.github: failed to initialise clients")
-	}
 	return _inst, nil
 }
 
 type GitHub struct {
 	Credentials
 
-	ctx      context.Context
-	logger   *slog.Logger
-	clientV3 *github.Client
-	clientV4 *githubv4.Client
+	authMode      string
+	ssmKey        string
+	ctx           context.Context
+	logger        *slog.Logger
+	clientV3      *github.Client
+	clientV4      *githubv4.Client
+	awsController *AWS
+
+	tokenTTL time.Time
 }
 
 type Credentials struct {
@@ -73,13 +100,21 @@ type Credentials struct {
 	HmacSecret     []byte                    `json:"-"`
 }
 
-func (g *GitHub) initialiseClients(options ...GHOption) error {
-	for _, opt := range options {
-		opt(g)
-	}
-
+func (g *GitHub) Authenticate(body []byte) error {
 	roundTripper := &loggingRoundTripper{logger: g.logger}
-	if g.Token != "" {
+	switch g.authMode {
+	case "token":
+		if g.clientV3 == nil && g.clientV4 == nil {
+			g.logger.Debug("Already authenticated. Skipping...")
+			return nil
+		}
+
+		if g.Token == "" {
+			g.logger.Debug("[GITHUB_TOKEN] not found. Falling back to SSM...")
+			g.authMode = "ssm"
+			return g.Authenticate(body)
+		}
+
 		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
 		g.clientV3 = github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
 		src := oauth2.StaticTokenSource(
@@ -88,17 +123,42 @@ func (g *GitHub) initialiseClients(options ...GHOption) error {
 		httpClient := oauth2.NewClient(g.ctx, src)
 		g.clientV4 = githubv4.NewClient(httpClient)
 		return nil
-	}
+	case "ssm":
+		if !g.tokenTTL.After(time.Now()) && g.clientV3 != nil && g.clientV4 != nil {
+			g.logger.Debug("Existing valid token found. Skipping...")
+			return nil
+		}
 
-	g.logger.Debug("Spawning clients using GitHub application credentials...")
-	transport, err := ghinstallation.NewAppsTransport(roundTripper, g.AppId, []byte(g.PrivateKey))
-	if err != nil {
-		return err
-	}
+		g.logger.Debug("Spawning clients using GitHub application credentials from SSM...")
+		secret, err := g.awsController.GetSecret(g.ctx, g.ssmKey, true)
+		if err != nil {
+			return errors.Wrap(err, "failed to fetch GitHub App credentials from SSM")
+		}
+		if err = json.Unmarshal([]byte(*secret), &g.Credentials); err != nil {
+			return errors.Wrap(err, "failed to unmarshal GitHub App credentials")
+		}
+		var eventInstallationId EventInstallationId
+		if err = json.Unmarshal(body, &eventInstallationId); err != nil {
+			return fmt.Errorf("no installation ID found. error: %v", err)
+		}
 
-	authTransport := &http.Client{Transport: transport}
-	g.clientV3 = github.NewClient(authTransport)
-	g.clientV4 = githubv4.NewClient(authTransport)
+		installationId := eventInstallationId.Installation.ID
+		g.logger.Debug("Using installation ID from event...", slog.Int64("installationId", *installationId))
+		transport, err := ghinstallation.New(roundTripper, g.AppId, *installationId, []byte(g.PrivateKey))
+		if err != nil {
+			return errors.Wrap(err, "failed to create installation transport")
+		}
+
+		authTransport := &http.Client{Transport: transport}
+		g.clientV3 = github.NewClient(authTransport)
+		g.clientV4 = githubv4.NewClient(authTransport)
+		// set token TTL to 30 seconds before expiry to allow for some leeway
+		g.tokenTTL = time.Now().Add(30 * time.Second)
+	case "vault":
+		panic("vault auth mode not implemented")
+	default:
+		return fmt.Errorf("unsupported auth mode: %s", g.authMode)
+	}
 
 	return nil
 }

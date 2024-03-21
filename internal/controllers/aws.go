@@ -63,7 +63,7 @@ func NewAWSController(opts ...Option) (*AWS, error) {
 	return _inst, nil
 }
 
-func (a *AWS) RetrieveCredentials(ctx context.Context, key string, encrypted bool) (*string, error) {
+func (a *AWS) GetSecret(ctx context.Context, key string, encrypted bool) (*string, error) {
 	ssmResponse, err := a.ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
 		Name:           aws.String(os.Getenv(key)),
 		WithDecryption: aws.Bool(encrypted),

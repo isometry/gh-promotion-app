@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"log/slog"
@@ -12,20 +13,37 @@ func Execute() error {
 }
 
 var (
-	githubToken string
-	logger      *slog.Logger
-	verbosity   int
-	callerTrace bool
+	githubAuthMode string
+	githubToken    string
+	githubSSMKey   string
+	logger         *slog.Logger
+	verbosity      int
+	callerTrace    bool
 )
-var envMap = map[*string]struct {
+
+type boundEnvVar struct {
 	Name, Env, Description string
+	Short                  *string
 	Hidden                 bool
-}{
+}
+
+var envMap = map[*string]boundEnvVar{
 	&githubToken: {
 		Name:        "github.token",
 		Env:         "GITHUB_TOKEN",
 		Description: "When specified, the GitHub token to use for API requests",
 		Hidden:      true,
+	},
+	&githubAuthMode: {
+		Name:        "github.auth-mode",
+		Env:         "GITHUB_AUTH_MODE",
+		Description: "Authentication mode. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' mode is used as an automatic fallback.",
+		Short:       helpers.StringPtr("A"),
+	},
+	&githubSSMKey: {
+		Name:        "github.ssm-key",
+		Env:         "GITHUB_APP_SSM_ARN",
+		Description: "The SSM parameter key to use when fetching GitHub App credentials",
 	},
 }
 
@@ -40,17 +58,26 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	bindEnvMap(envMap)
+
+	rootCmd.PersistentFlags().CountVarP(&verbosity, "logger.verbose", "v", "increase logger verbosity")
+	rootCmd.PersistentFlags().BoolVarP(&callerTrace, "logger.caller-trace", "V", false, "enable logger caller trace")
+	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(lambdaCmd)
+}
+
+func bindEnvMap(m map[*string]boundEnvVar) {
 	viper.AutomaticEnv()
-	for v, cfg := range envMap {
+	for v, cfg := range m {
 		_ = viper.BindEnv(cfg.Env)
-		rootCmd.PersistentFlags().StringVar(v, cfg.Name, viper.GetString(cfg.Env), cfg.Description)
+		if cfg.Short == nil {
+			rootCmd.PersistentFlags().StringVar(v, cfg.Name, viper.GetString(cfg.Env), cfg.Description)
+		} else {
+			rootCmd.PersistentFlags().StringVarP(v, cfg.Name, *cfg.Short, viper.GetString(cfg.Env), cfg.Description)
+		}
 		if cfg.Hidden {
 			_ = rootCmd.PersistentFlags().MarkHidden(cfg.Name)
 		}
 	}
 
-	rootCmd.PersistentFlags().CountVarP(&verbosity, "logger.verbose", "v", "increase verbosity")
-	rootCmd.PersistentFlags().BoolVarP(&callerTrace, "logger.caller-trace", "V", false, "enable logger caller trace")
-	rootCmd.AddCommand(serviceCmd)
-	rootCmd.AddCommand(lambdaCmd)
 }

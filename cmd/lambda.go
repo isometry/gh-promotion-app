@@ -20,7 +20,11 @@ var lambdaCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger.Debug("Creating promotion handler...")
-		hdl, err := handler.NewPromotionHandler()
+		hdl, err := handler.NewPromotionHandler(
+			handler.WithAuthMode(githubAuthMode),
+			handler.WithSSMKey(githubSSMKey),
+			handler.WithContext(cmd.Context()),
+			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {
 			return errors.Wrap(err, "failed to create promotion handler")
 		}
