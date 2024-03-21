@@ -19,6 +19,9 @@ type Promoter struct {
 	stages []string
 }
 
+func NewDefaultPromoter() *Promoter {
+	return NewStagePromoter(DefaultStages)
+}
 func NewStagePromoter(stages []string) *Promoter {
 	return &Promoter{stages}
 }

@@ -1,4 +1,4 @@
-package promotion_test
+package helpers_test
 
 import (
 	"github.com/isometry/gh-promotion-app/internal/helpers"

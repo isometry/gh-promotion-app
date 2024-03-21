@@ -9,6 +9,11 @@ import (
 
 type WebhookSecret string
 
+func NewWebhookSecret(secret string) *WebhookSecret {
+	s := WebhookSecret(secret)
+	return &s
+}
+
 func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) error {
 	if s == nil {
 		return fmt.Errorf("missing webhook secret")

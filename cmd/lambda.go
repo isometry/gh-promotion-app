@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/isometry/gh-promotion-app/internal/handler"
+	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -23,6 +24,9 @@ var lambdaCmd = &cobra.Command{
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithAuthMode(githubAuthMode),
 			handler.WithSSMKey(githubSSMKey),
+			handler.WithToken(githubToken),
+			handler.WithWebhookSecret(webhookSecret),
+			handler.WithPromoter(promotion.NewDefaultPromoter()),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {

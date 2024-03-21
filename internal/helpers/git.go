@@ -23,3 +23,8 @@ func NormaliseRef[S string | *string](ref S) string {
 func NormaliseFullRef[S string | *string](ref S) string {
 	return "refs/heads/" + NormaliseRef(ref)
 }
+
+func NormaliseFullRefPtr[S string | *string](ref S) *string {
+	rn := NormaliseFullRef(ref)
+	return &rn
+}

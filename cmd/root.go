@@ -16,6 +16,7 @@ var (
 	githubAuthMode string
 	githubToken    string
 	githubSSMKey   string
+	webhookSecret  string
 	logger         *slog.Logger
 	verbosity      int
 	callerTrace    bool
@@ -44,6 +45,10 @@ var envMap = map[*string]boundEnvVar{
 		Name:        "github.ssm-key",
 		Env:         "GITHUB_APP_SSM_ARN",
 		Description: "The SSM parameter key to use when fetching GitHub App credentials",
+	},
+	&webhookSecret: {
+		Name: "github.webhook-secret",
+		Env:  "GITHUB_WEBHOOK_SECRET",
 	},
 }
 

@@ -7,17 +7,23 @@ import (
 
 type httpResponse struct {
 	Message string `json:"message"`
-	Error   any    `json:"error"`
+	Error   string `json:"error,omitempty"`
 }
 
 func NewHttpResponse(response Response, err error, rw http.ResponseWriter) {
 	hR := httpResponse{
 		Message: response.Body,
-		Error:   err,
+	}
+	if err != nil {
+		hR.Error = err.Error()
 	}
 
 	respBody, _ := json.Marshal(hR)
-	rw.WriteHeader(response.StatusCode)
+	statusCode := response.StatusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	rw.WriteHeader(statusCode)
 	for k, v := range response.Headers {
 		rw.Header().Set(k, v)
 	}

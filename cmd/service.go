@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/isometry/gh-promotion-app/internal/handler"
+	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/spf13/cobra"
 	"net"
@@ -26,8 +27,11 @@ var serviceCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger.Debug("Creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
+			handler.WithWebhookSecret(webhookSecret),
 			handler.WithAuthMode(githubAuthMode),
+			handler.WithToken(githubToken),
 			handler.WithSSMKey(githubSSMKey),
+			handler.WithPromoter(promotion.NewDefaultPromoter()),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {
@@ -53,6 +57,10 @@ var serviceCmd = &cobra.Command{
 		logger.Info("Serving...", "address", s.Addr, "path", hostPath, "timeout", ioTimeout.String())
 		return s.ListenAndServe()
 	},
+}
+
+func NewServiceCmd() *cobra.Command {
+	return serviceCmd
 }
 
 func init() {

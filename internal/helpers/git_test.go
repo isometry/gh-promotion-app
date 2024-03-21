@@ -88,7 +88,7 @@ func TestStageIndex(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			assert.Equal(t, tc.Expected, promotion.NewStagePromoter(promotion.DefaultStages).StageIndex(tc.Input))
+			assert.Equal(t, tc.Expected, promotion.NewDefaultPromoter().StageIndex(tc.Input))
 		})
 	}
 }
@@ -136,7 +136,7 @@ func TestIsPromotionRequest(t *testing.T) {
 					Ref: &tc.BaseRef,
 				},
 			}
-			assert.Equal(t, tc.ValidPromotion, promotion.NewStagePromoter(promotion.DefaultStages).IsPromotionRequest(pr))
+			assert.Equal(t, tc.ValidPromotion, promotion.NewDefaultPromoter().IsPromotionRequest(pr))
 		})
 	}
 }
@@ -176,7 +176,7 @@ func TestIsPromotableRef(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			stage, result := promotion.NewStagePromoter(promotion.DefaultStages).IsPromotableRef(tc.Ref)
+			stage, result := promotion.NewDefaultPromoter().IsPromotableRef(tc.Ref)
 			assert.Equal(t, tc.ExpectedStage, stage)
 			assert.Equal(t, tc.ExpectedResult, result)
 		})

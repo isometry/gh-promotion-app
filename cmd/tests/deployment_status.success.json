@@ -57,6 +57,7 @@
     "full_name": "{{ .FullName }}",
     "private": true,
     "owner": {
+      "login": "{{ .Owner }}",
       "id": 29751843,
       "node_id": "MDEyOk9yZ2FuaXphdGlvbjI5NzUxODQz",
       "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",

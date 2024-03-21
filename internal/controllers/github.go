@@ -14,7 +14,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -61,6 +60,18 @@ func WithSSMKey(key string) GHOption {
 	}
 }
 
+func WithLogger(logger *slog.Logger) GHOption {
+	return func(a *GitHub) {
+		a.logger = logger
+	}
+}
+
+func WithWebhookSecret(secret *validation.WebhookSecret) GHOption {
+	return func(a *GitHub) {
+		a.webhookSecret = secret
+	}
+}
+
 func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 	_inst := new(GitHub)
 	for _, opt := range opts {
@@ -70,16 +81,17 @@ func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 		_inst.ctx = context.Background()
 	}
 	if _inst.logger == nil {
-		_inst.logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})).With("controller", "github")
+		_inst.logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
+	_inst.WebhookSecret = _inst.webhookSecret
+	_inst.logger.With("authMode", _inst.authMode)
 	return _inst, nil
 }
 
 type GitHub struct {
 	Credentials
 
+	webhookSecret *validation.WebhookSecret
 	authMode      string
 	ssmKey        string
 	ctx           context.Context
@@ -102,9 +114,10 @@ type Credentials struct {
 
 func (g *GitHub) Authenticate(body []byte) error {
 	roundTripper := &loggingRoundTripper{logger: g.logger}
+	g.logger.Debug("Authenticating...", slog.String("authMode", g.authMode))
 	switch g.authMode {
 	case "token":
-		if g.clientV3 == nil && g.clientV4 == nil {
+		if g.clientV3 != nil && g.clientV4 != nil {
 			g.logger.Debug("Already authenticated. Skipping...")
 			return nil
 		}
@@ -122,8 +135,10 @@ func (g *GitHub) Authenticate(body []byte) error {
 		)
 		httpClient := oauth2.NewClient(g.ctx, src)
 		g.clientV4 = githubv4.NewClient(httpClient)
+		g.logger.Debug("Successfully spawned clients using PAT...")
 		return nil
 	case "ssm":
+		g.logger.Debug("Authenticating using GitHub App credentials from SSM...")
 		if !g.tokenTTL.After(time.Now()) && g.clientV3 != nil && g.clientV4 != nil {
 			g.logger.Debug("Existing valid token found. Skipping...")
 			return nil
@@ -167,7 +182,7 @@ func (g *GitHub) ValidateWebhookSecret(secret []byte, headers map[string]string)
 	return g.WebhookSecret.ValidateSignature(secret, headers)
 }
 
-func (g *GitHub) FindPullRequest(pCtx promotion.Context) (*github.PullRequest, error) {
+func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, error) {
 	g.logger.Info("Finding promotion requests...", slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
 	prListOptions := &github.PullRequestListOptions{
 		State: "open",
@@ -191,8 +206,10 @@ func (g *GitHub) FindPullRequest(pCtx promotion.Context) (*github.PullRequest, e
 	}
 
 	for _, pr := range prs {
-		if *pr.Head.SHA == *pCtx.HeadRef && pCtx.Promoter.IsPromotionRequest(pr) {
+		if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
 			g.logger.Info("Found matching promotion request...", slog.String("pr", *pr.URL))
+			pCtx.HeadRef = pr.Head.Ref
+			pCtx.BaseRef = pr.Base.Ref
 			return pr, nil
 		}
 	}
@@ -200,9 +217,9 @@ func (g *GitHub) FindPullRequest(pCtx promotion.Context) (*github.PullRequest, e
 	return nil, fmt.Errorf("no matching promotion request found")
 }
 
-func (g *GitHub) CreatePullRequest(pCtx promotion.Context) (*github.PullRequest, error) {
+func (g *GitHub) CreatePullRequest(pCtx *promotion.Context) (*github.PullRequest, error) {
 	pr, _, err := g.clientV3.PullRequests.Create(g.ctx, *pCtx.Owner, *pCtx.Repository, &github.NewPullRequest{
-		Title:               g.RequestTitle(pCtx),
+		Title:               g.RequestTitle(*pCtx),
 		Head:                pCtx.HeadRef,
 		Base:                pCtx.BaseRef,
 		MaintainerCanModify: github.Bool(false),
@@ -216,11 +233,11 @@ func (g *GitHub) CreatePullRequest(pCtx promotion.Context) (*github.PullRequest,
 }
 
 // FastForwardRefToSha pushes a commit to a ref, used to merge an open pull request via fast-forward
-func (g *GitHub) FastForwardRefToSha(pCtx promotion.Context) error {
+func (g *GitHub) FastForwardRefToSha(pCtx *promotion.Context) error {
 	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
 	ctxLogger.Debug("Attempting fast forward...", slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
 	reference := github.Reference{
-		Ref: helpers.NormaliseRefPtr(*pCtx.BaseRef),
+		Ref: helpers.NormaliseFullRefPtr(*pCtx.BaseRef),
 		Object: &github.GitObject{
 			SHA: pCtx.HeadSHA,
 		},
@@ -233,6 +250,60 @@ func (g *GitHub) FastForwardRefToSha(pCtx promotion.Context) error {
 
 	ctxLogger.Debug("Successful fast forward")
 	return nil
+}
+
+type CommitOnBranchRequest struct {
+	Owner, Repository, Branch, Message string
+}
+
+func (g *GitHub) EmptyCommitOnBranch(ctx context.Context, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
+	// Fetch the current head commit of the branch
+	var query struct {
+		Repository struct {
+			Ref struct {
+				Target struct {
+					Oid githubv4.GitObjectID
+				} `graphql:"target"`
+			} `graphql:"ref(qualifiedName: $qualifiedName)"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+
+	parts := strings.Split(string(*createCommitOnBranchInput.Branch.RepositoryNameWithOwner), "/")
+	variables := map[string]any{
+		"owner":         githubv4.String(parts[0]),
+		"name":          githubv4.String(parts[1]),
+		"qualifiedName": *createCommitOnBranchInput.Branch.BranchName,
+	}
+
+	if err := g.clientV4.Query(ctx, &query, variables); err != nil {
+		return "", errors.Wrap(err, "GetBranchHeadCommit: failed to fetch the current head commit of the branch")
+	}
+
+	createCommitOnBranchInput.ExpectedHeadOid = query.Repository.Ref.Target.Oid
+	var mutation struct {
+		CreateCommitOnBranch struct {
+			Commit struct {
+				Oid githubv4.GitObjectID
+				Url githubv4.String
+			}
+		} `graphql:"createCommitOnBranch(input: $input)"`
+	}
+
+	if err := g.clientV4.Mutate(ctx, &mutation, createCommitOnBranchInput, nil); err != nil {
+		return "", errors.Wrap(err, "failed to create commit on branch")
+	}
+	return string(mutation.CreateCommitOnBranch.Commit.Oid), nil
+}
+
+func GitHubEmptyCommitOnBranchWithDefaultClient(ctx context.Context, req githubv4.CreateCommitOnBranchInput, opts ...GHOption) (string, error) {
+	ctl, err := NewGitHubController(opts...)
+	if err != nil {
+		return "", err
+	}
+	if err = ctl.Authenticate(nil); err != nil {
+		return "", err
+	}
+	return ctl.EmptyCommitOnBranch(ctx, req)
 }
 
 func (g *GitHub) RequestTitle(pCtx promotion.Context) *string {

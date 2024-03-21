@@ -12,7 +12,7 @@ type Config struct {
 			Bucket *string
 		}
 		SSM *struct {
-			Parameter *string
+			Key *string
 		}
 	}
 	GitHub *struct {
@@ -21,7 +21,7 @@ type Config struct {
 		AppPrivateKey *string `mapstructure:"app_private_key"`
 		WebhookSecret *string `mapstructure:"webhook_secret"`
 	}
-	PromotionStages []string
+	DefaultPromotionStages []string
 }
 
 func (c *Config) Load() {
