@@ -30,17 +30,3 @@ func TestString(t *testing.T) {
 		})
 	}
 }
-
-// The 'GitHub/ClientV3' is not an interface and thus cannot be mocked.
-
-func TestContext_FindRequest(t *testing.T) {
-	t.Skip("not implemented")
-}
-
-func TestContext_CreateRequest(t *testing.T) {
-	t.Skip("not implemented")
-}
-
-func TestContext_FastForwardRefToSha(t *testing.T) {
-	t.Skip("not implemented")
-}

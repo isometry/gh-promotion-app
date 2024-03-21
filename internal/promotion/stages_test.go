@@ -2,6 +2,7 @@ package promotion_test
 
 import (
 	"github.com/google/go-github/v60/github"
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -27,7 +28,7 @@ func TestStageRef(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			assert.Equal(t, tc.Expected, *promotion.StageRef(tc.Input))
+			assert.Equal(t, tc.Expected, helpers.NormaliseRef(tc.Input))
 		})
 	}
 }
@@ -52,7 +53,7 @@ func TestStageName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			assert.Equal(t, tc.Expected, promotion.StageName(tc.Input))
+			assert.Equal(t, tc.Expected, helpers.NormaliseRef(tc.Input))
 		})
 	}
 }
