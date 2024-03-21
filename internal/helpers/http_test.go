@@ -45,7 +45,7 @@ func TestNewHttpResponse(t *testing.T) {
 				Body:       "Failure",
 				Headers:    map[string]string{"Content-Type": "application/json"},
 			},
-			Error: errors.New("Internal Server Error"),
+			Error: errors.New("internal Server Error"),
 			Expected: expectedResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       "Failure",
@@ -64,7 +64,7 @@ func TestNewHttpResponse(t *testing.T) {
 		{
 			Name:     "with_empty_response_and_error",
 			Response: helpers.Response{},
-			Error:    errors.New("Internal Server Error"),
+			Error:    errors.New("internal Server Error"),
 			Expected: expectedResponse{
 				StatusCode: http.StatusOK,
 				Body:       "",
@@ -77,7 +77,7 @@ func TestNewHttpResponse(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			rw := httptest.NewRecorder()
 
-			helpers.NewHttpResponse(tc.Response, tc.Error, rw)
+			helpers.RespondHTTP(tc.Response, tc.Error, rw)
 
 			assert.Equal(t, tc.Expected.StatusCode, rw.Code)
 			assert.Equal(t, tc.Expected.Header, rw.Header().Get("Content-Type"))

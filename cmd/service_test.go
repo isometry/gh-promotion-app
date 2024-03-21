@@ -103,7 +103,7 @@ func TestHandleEvent(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(tt *testing.T) {
 			if tc.CreateEmptyCommit {
-				headRef, err := createEmptyCommit(t, slog.LevelError)
+				headRef, err := createEmptyCommit(slog.LevelError)
 				if err != nil {
 					t.Fatalf("failed to createEmptyCommit test: %v", err)
 				}
@@ -117,7 +117,7 @@ func TestHandleEvent(t *testing.T) {
 			// Assertions
 			assert.Equal(tt, tc.ExpectedStatus, rr.Code)
 			if tt.Failed() {
-				tt.Logf("payload: %s", renderPayload(tt, tc.ReceivedRequest, ref, testRepository))
+				tt.Logf("payload: %s", renderPayload(tc.ReceivedRequest, ref, testRepository))
 				_ = runTest(tt, tc, ref, slog.LevelDebug)
 				tt.FailNow()
 			}
@@ -128,7 +128,7 @@ func TestHandleEvent(t *testing.T) {
 var dummyWebhookKey = "key"
 
 func runTest(t *testing.T, tc testCase, headRef string, level slog.Leveler) *httptest.ResponseRecorder {
-	payload := renderPayload(t, tc.ReceivedRequest, headRef, testRepository)
+	payload := renderPayload(tc.ReceivedRequest, headRef, testRepository)
 	if tc.EnableWebhookSecret {
 		_ = os.Setenv("GITHUB_WEBHOOK_SECRET", dummyWebhookKey)
 		defer func() {
@@ -167,7 +167,7 @@ func setupRuntime(t *testing.T, tc testCase, level slog.Leveler) *runtime.Runtim
 		runtime.WithLogger(testLogger.With("component", "runtime")))
 }
 
-func createEmptyCommit(t *testing.T, level slog.Leveler) (string, error) {
+func createEmptyCommit(level slog.Leveler) (string, error) {
 	ref, err := controllers.GitHubEmptyCommitOnBranchWithDefaultClient(
 		context.Background(), githubv4.CreateCommitOnBranchInput{
 			Branch: githubv4.CommittableBranch{
@@ -192,7 +192,7 @@ func createEmptyCommit(t *testing.T, level slog.Leveler) (string, error) {
 	return ref, nil
 }
 
-func renderPayload(t *testing.T, payload string, headRef, fullName string) string {
+func renderPayload(payload string, headRef, fullName string) string {
 	parts := strings.Split(testRepository, "/")
 	owner := parts[0]
 	repository := parts[1]

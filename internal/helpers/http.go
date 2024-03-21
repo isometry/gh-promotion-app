@@ -10,7 +10,7 @@ type httpResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func NewHttpResponse(response Response, err error, rw http.ResponseWriter) {
+func RespondHTTP(response Response, err error, rw http.ResponseWriter) {
 	hR := httpResponse{
 		Message: response.Body,
 	}

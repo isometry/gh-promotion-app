@@ -34,7 +34,7 @@ func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 }
 
 func (r *Runtime) HandleEvent(req helpers.Request) (response helpers.Response, err error) {
-	r.logger.Info("received API Gateway V2 request")
+	r.logger.Info("Received API Gateway V2 request")
 
 	hResponse, err := r.Handler.Process([]byte(req.Body), req.Headers)
 	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
@@ -58,7 +58,6 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	r.logger.Debug("Normalising headers...")
 	headers := make(map[string]string)
 	for k, v := range req.Header {
-		// XXX: we're losing duplicated headers here
 		headers[strings.ToLower(k)] = v[0]
 	}
 
@@ -70,5 +69,5 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 	response, err := r.Handler.Process(body, headers)
-	helpers.NewHttpResponse(response, err, resp)
+	helpers.RespondHTTP(response, err, resp)
 }

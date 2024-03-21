@@ -20,13 +20,20 @@ var lambdaCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var promoter *promotion.Promoter
+		if !dynamicPromoter {
+			promoter = promotion.NewDefaultPromoter()
+		} else {
+			logger.Info("Dynamic promoter activated...")
+		}
 		logger.Debug("Creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithAuthMode(githubAuthMode),
 			handler.WithSSMKey(githubSSMKey),
 			handler.WithToken(githubToken),
-			handler.WithWebhookSecret(webhookSecret),
-			handler.WithPromoter(promotion.NewDefaultPromoter()),
+			handler.WithWebhookSecret(webhookSecret), // @TODO -> This breaks in lambda, we need to fetch it from SSM
+			handler.WithPromoter(promoter),
+			handler.WithDynamicPromoterKey(dynamicPromoterKey),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {

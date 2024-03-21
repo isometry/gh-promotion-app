@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	hostPath, hostAddr, hostPort string
-	ioTimeout                    time.Duration
+	svcHostPath, svcHostAddr, svcHostPort string
+	svcIoTimeout                          time.Duration
 )
 
 var serviceCmd = &cobra.Command{
@@ -25,13 +25,20 @@ var serviceCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var promoter *promotion.Promoter
+		if !dynamicPromoter {
+			promoter = promotion.NewDefaultPromoter()
+		} else {
+			logger.Info("Dynamic promoter activated...")
+		}
 		logger.Debug("Creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithWebhookSecret(webhookSecret),
 			handler.WithAuthMode(githubAuthMode),
 			handler.WithToken(githubToken),
 			handler.WithSSMKey(githubSSMKey),
-			handler.WithPromoter(promotion.NewDefaultPromoter()),
+			handler.WithPromoter(promoter),
+			handler.WithDynamicPromoterKey(dynamicPromoterKey),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {
@@ -44,28 +51,22 @@ var serviceCmd = &cobra.Command{
 
 		logger.Debug("Creating HTTP server...")
 		h := http.NewServeMux()
-		h.HandleFunc(hostPath, runtime.ServeHTTP)
+		h.HandleFunc(svcHostPath, runtime.ServeHTTP)
 
 		s := &http.Server{
 			Handler:      h,
-			Addr:         net.JoinHostPort(hostAddr, hostPort),
-			WriteTimeout: ioTimeout,
-			ReadTimeout:  ioTimeout,
-			IdleTimeout:  ioTimeout,
+			Addr:         net.JoinHostPort(svcHostAddr, svcHostPort),
+			WriteTimeout: svcIoTimeout,
+			ReadTimeout:  svcIoTimeout,
+			IdleTimeout:  svcIoTimeout,
 		}
 
-		logger.Info("Serving...", "address", s.Addr, "path", hostPath, "timeout", ioTimeout.String())
+		logger.Info("Serving...", "address", s.Addr, "path", svcHostPath, "timeout", svcIoTimeout.String())
 		return s.ListenAndServe()
 	},
 }
 
-func NewServiceCmd() *cobra.Command {
-	return serviceCmd
-}
-
 func init() {
-	serviceCmd.PersistentFlags().StringVarP(&hostPath, "path", "P", "/", "host path")
-	serviceCmd.PersistentFlags().StringVarP(&hostAddr, "host", "H", "", "host address. If not specified, listens on all interfaces in dual-stack mode when available.")
-	serviceCmd.PersistentFlags().StringVarP(&hostPort, "port", "p", "8443", "host port")
-	serviceCmd.PersistentFlags().DurationVarP(&ioTimeout, "timeout", "t", 1*time.Second, "I/O timeout")
+	bindEnvMap(serviceCmd, svcEnvMapString)
+	bindEnvMap(serviceCmd, svcEnvMapDuration)
 }

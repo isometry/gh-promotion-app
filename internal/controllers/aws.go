@@ -25,11 +25,11 @@ type AWS struct {
 
 type Option func(*AWS)
 
-func WithConfig(cfg *aws.Config) Option {
-	return func(c *AWS) {
-		c.config = cfg
-	}
-}
+//func WithConfig(cfg *aws.Config) Option {
+//	return func(c *AWS) {
+//		c.config = cfg
+//	}
+//}
 
 func WithContext(ctx context.Context) Option {
 	return func(a *AWS) {

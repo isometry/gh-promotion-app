@@ -35,12 +35,12 @@ func WithToken(token string) GHOption {
 	}
 }
 
-func WithApplication(appId int64, privateKey string) GHOption {
-	return func(a *GitHub) {
-		a.AppId = appId
-		a.PrivateKey = privateKey
-	}
-}
+//func WithApplication(appId int64, privateKey string) GHOption {
+//	return func(a *GitHub) {
+//		a.AppId = appId
+//		a.PrivateKey = privateKey
+//	}
+//}
 
 func WithAuthMode(mode string) GHOption {
 	return func(a *GitHub) {
@@ -68,7 +68,7 @@ func WithLogger(logger *slog.Logger) GHOption {
 
 func WithWebhookSecret(secret *validation.WebhookSecret) GHOption {
 	return func(a *GitHub) {
-		a.webhookSecret = secret
+		a.WebhookSecret = secret
 	}
 }
 
@@ -83,7 +83,6 @@ func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 	if _inst.logger == nil {
 		_inst.logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
-	_inst.WebhookSecret = _inst.webhookSecret
 	_inst.logger.With("authMode", _inst.authMode)
 	return _inst, nil
 }
@@ -91,7 +90,6 @@ func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 type GitHub struct {
 	Credentials
 
-	webhookSecret *validation.WebhookSecret
 	authMode      string
 	ssmKey        string
 	ctx           context.Context

@@ -6,7 +6,3 @@ func String(p *string) string {
 	}
 	return *p
 }
-
-func StringPtr(s string) *string {
-	return &s
-}
