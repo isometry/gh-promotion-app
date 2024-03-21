@@ -36,7 +36,7 @@ func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 func (r *Runtime) HandleEvent(req helpers.Request) (response helpers.Response, err error) {
 	r.logger.Info("received API Gateway V2 request")
 
-	hResponse, err := r.Handler.Process(req)
+	hResponse, err := r.Handler.Process([]byte(req.Body), req.Headers)
 	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
 	return helpers.Response{
 		Body:       hResponse.Body,
@@ -56,12 +56,19 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 	r.logger.Debug("Received HTTP request...", slog.Any("requestor", req.RemoteAddr), slog.Any("method", req.Method), slog.Any("path", req.URL.Path), slog.Any("headers", req.Header))
 	r.logger.Debug("Normalising headers...")
+	headers := make(map[string]string)
 	for k, v := range req.Header {
 		// XXX: we're losing duplicated headers here
-		req.Header.Set(strings.ToLower(k), v[0])
+		headers[strings.ToLower(k)] = v[0]
 	}
 
 	r.logger.Debug("Processing request...")
-	response, err := r.Handler.Process(req)
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		r.logger.Error("Failed to read request body", slog.Any("error", err))
+		resp.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	response, err := r.Handler.Process(body, headers)
 	helpers.NewHttpResponse(response, err, resp)
 }

@@ -103,7 +103,7 @@ func (g *GitHub) initialiseClients(options ...GHOption) error {
 	return nil
 }
 
-func (g *GitHub) ValidateWebhookSecret(secret string, headers map[string]string) error {
+func (g *GitHub) ValidateWebhookSecret(secret []byte, headers map[string]string) error {
 	return g.WebhookSecret.ValidateSignature(secret, headers)
 }
 

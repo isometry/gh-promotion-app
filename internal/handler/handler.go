@@ -86,11 +86,11 @@ func (h *Handler) ValidateRequest(eventType string) (*helpers.Response, error) {
 	return nil, nil
 }
 
-func (h *Handler) Process(req helpers.Request) (response helpers.Response, err error) {
+func (h *Handler) Process(body []byte, headers map[string]string) (response helpers.Response, err error) {
 	logger := h.logger
 	logger.Info("handling req")
 
-	eventType, found := req.Headers[strings.ToLower(github.EventTypeHeader)]
+	eventType, found := headers[strings.ToLower(github.EventTypeHeader)]
 	if !found {
 		logger.Warn("missing event type")
 		return helpers.Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing event type")
@@ -103,19 +103,19 @@ func (h *Handler) Process(req helpers.Request) (response helpers.Response, err e
 	}
 
 	h.logger.Debug("Reading req body...")
-	if err = h.githubController.ValidateWebhookSecret(req.Body, req.Headers); err != nil {
+	if err = h.githubController.ValidateWebhookSecret(body, headers); err != nil {
 		logger.Error("validating signature", slog.Any("error", err))
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
 	}
 	logger.Debug("req is valid")
 
-	event, err := github.ParseWebHook(eventType, []byte(req.Body))
+	event, err := github.ParseWebHook(eventType, body)
 	if err != nil {
 		logger.Warn("parsing webhook payload", slog.Any("error", err))
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("invalid payload")
 	}
 
-	if err = h.awsController.PutS3Object(eventType, os.Getenv("S3_BUCKET_NAME"), []byte(req.Body)); err != nil {
+	if err = h.awsController.PutS3Object(eventType, os.Getenv("S3_BUCKET_NAME"), body); err != nil {
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
 

@@ -1,7 +1,7 @@
 package promotion_test
 
 import (
-	"github.com/isometry/gh-promotion-app/internal/promotion"
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -26,7 +26,7 @@ func TestString(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			assert.Equal(t, tc.Expected, promotion.String(tc.Input))
+			assert.Equal(t, tc.Expected, helpers.String(tc.Input))
 		})
 	}
 }

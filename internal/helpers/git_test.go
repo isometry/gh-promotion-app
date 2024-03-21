@@ -1,4 +1,4 @@
-package promotion_test
+package helpers_test
 
 import (
 	"github.com/google/go-github/v60/github"
@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestStageRef(t *testing.T) {
+func TestNormaliseFullRef(t *testing.T) {
 	testCases := []struct {
 		Name     string
 		Input    string
@@ -28,12 +28,12 @@ func TestStageRef(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			assert.Equal(t, tc.Expected, helpers.NormaliseRef(tc.Input))
+			assert.Equal(t, tc.Expected, helpers.NormaliseFullRef(tc.Input))
 		})
 	}
 }
 
-func TestStageName(t *testing.T) {
+func TestNormaliseRef(t *testing.T) {
 	testCases := []struct {
 		Name     string
 		Input    string

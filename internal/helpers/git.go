@@ -1,7 +1,6 @@
 package helpers
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 )
@@ -18,5 +17,9 @@ func NormaliseRef[S string | *string](ref S) string {
 		r = rv.Elem().String()
 	}
 
-	return fmt.Sprintf("refs/heads/%s", strings.TrimPrefix(r, "refs/heads/"))
+	return strings.TrimPrefix(r, "refs/heads/")
+}
+
+func NormaliseFullRef[S string | *string](ref S) string {
+	return "refs/heads/" + NormaliseRef(ref)
 }
