@@ -18,11 +18,14 @@ var (
 	callerTrace bool
 )
 var envMap = map[*string]struct {
-	Env, Description string
+	Name, Env, Description string
+	Hidden                 bool
 }{
 	&githubToken: {
+		Name:        "github.token",
 		Env:         "GITHUB_TOKEN",
 		Description: "When specified, the GitHub token to use for API requests",
+		Hidden:      true,
 	},
 }
 
@@ -40,10 +43,14 @@ func init() {
 	viper.AutomaticEnv()
 	for v, cfg := range envMap {
 		_ = viper.BindEnv(cfg.Env)
-		rootCmd.PersistentFlags().StringVar(v, cfg.Description, viper.GetString(cfg.Env), cfg.Description)
+		rootCmd.PersistentFlags().StringVar(v, cfg.Name, viper.GetString(cfg.Env), cfg.Description)
+		if cfg.Hidden {
+			_ = rootCmd.PersistentFlags().MarkHidden(cfg.Name)
+		}
 	}
 
-	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "increase verbosity")
-	rootCmd.PersistentFlags().BoolVar(&callerTrace, "caller-trace", false, "enable caller trace")
+	rootCmd.PersistentFlags().CountVarP(&verbosity, "logger.verbose", "v", "increase verbosity")
+	rootCmd.PersistentFlags().BoolVarP(&callerTrace, "logger.caller-trace", "V", false, "enable logger caller trace")
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(lambdaCmd)
 }

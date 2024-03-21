@@ -9,7 +9,7 @@ import (
 
 type WebhookSecret string
 
-func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) error {
+func (s *WebhookSecret) ValidateSignature(body string, headers map[string]string) error {
 	if s == nil {
 		return fmt.Errorf("missing webhook secret")
 	}
@@ -22,5 +22,5 @@ func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string
 		return fmt.Errorf("unsupported content type: %s", contentType)
 	}
 
-	return github.ValidateSignature(signature, body, []byte(*s))
+	return github.ValidateSignature(signature, []byte(body), []byte(*s))
 }

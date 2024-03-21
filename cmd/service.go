@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/isometry/gh-promotion-app/cmd/helpers"
 	"github.com/isometry/gh-promotion-app/internal/handler"
+	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/spf13/cobra"
 	"net"
 	"net/http"
@@ -17,20 +17,26 @@ var (
 var serviceCmd = &cobra.Command{
 	Use:     "service",
 	Aliases: []string{"s", "serve", "standalone", "server"},
-	PostRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
 		logger = logger.With("mode", "service")
-		logger.Info("spawning...")
+		logger.Info("Spawning...")
 
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		hdl, err := handler.NewPromotionHandler()
+		logger.Debug("Creating promotion handler...")
+		hdl, err := handler.NewPromotionHandler(
+			handler.WithContext(cmd.Context()),
+			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {
 			return err
 		}
 
-		runtime := helpers.Runtime{Handler: hdl}
+		logger.Debug("Creating runtime...")
+		runtime := runtime.NewRuntime(hdl,
+			runtime.WithLogger(logger.With("component", "runtime")))
 
+		logger.Debug("Creating HTTP server...")
 		h := http.NewServeMux()
 		h.HandleFunc(hostPath, runtime.ServeHTTP)
 
@@ -42,6 +48,7 @@ var serviceCmd = &cobra.Command{
 			IdleTimeout:  ioTimeout,
 		}
 
+		logger.Info("Serving...", "address", s.Addr, "path", hostPath, "timeout", ioTimeout.String())
 		return s.ListenAndServe()
 	},
 }

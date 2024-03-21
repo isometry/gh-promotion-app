@@ -7,6 +7,7 @@ import (
 	"github.com/isometry/gh-promotion-app/internal/controllers"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/pkg/errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -29,6 +30,18 @@ var HandledEventTypes = []string{
 
 type Option func(*Handler)
 
+func WithLogger(logger *slog.Logger) Option {
+	return func(h *Handler) {
+		h.logger = logger
+	}
+}
+
+func WithContext(ctx context.Context) Option {
+	return func(h *Handler) {
+		h.ctx = ctx
+	}
+}
+
 type Handler struct {
 	ctx              context.Context
 	logger           *slog.Logger
@@ -39,9 +52,7 @@ type Handler struct {
 
 func NewPromotionHandler(options ...Option) (*Handler, error) {
 	_inst := &Handler{
-		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})).With("component", "github-controller"),
+		logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
 	for _, opt := range options {
 		opt(_inst)
@@ -67,71 +78,51 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 	return _inst, err
 }
 
-func (gc *Handler) ValidateRequest(eventType string, request helpers.Request) (*helpers.Response, error) {
-	if eventType == "" {
-		gc.logger.Warn("missing event type")
-		return &helpers.Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing event type")
-	}
-
+func (h *Handler) ValidateRequest(eventType string) (*helpers.Response, error) {
 	if slices.Index(HandledEventTypes, eventType) == -1 {
-		gc.logger.Info("unhandled event")
+		h.logger.Info("unhandled event")
 		return &helpers.Response{StatusCode: http.StatusBadRequest}, fmt.Errorf("unhandled event type: %s", eventType)
 	}
 	return nil, nil
 }
 
-func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err error) {
-	logger := gc.logger
-	logger.Info("handling request")
+func (h *Handler) Process(req helpers.Request) (response helpers.Response, err error) {
+	logger := h.logger
+	logger.Info("handling req")
 
-	eventType := request.Headers[strings.ToLower(github.EventTypeHeader)]
+	eventType, found := req.Headers[strings.ToLower(github.EventTypeHeader)]
+	if !found {
+		logger.Warn("missing event type")
+		return helpers.Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing event type")
+	}
 
-	// Validate the request
-	resp, err := gc.ValidateRequest(eventType, request)
+	// Validate the req
+	resp, err := h.ValidateRequest(eventType)
 	if err != nil {
 		return *resp, err
 	}
 
-	// Request credentials
-	//gc.githubController.
-
-	//// if a GITHUB_TOKEN is set, use it to create a GitHub client
-	//if os.Getenv("GITHUB_TOKEN") != "" {
-	//	logger.Info("using GITHUB_TOKEN to create GitHub client")
-	//	if err = gc.RetrieveClientCredsFromEnv(); err != nil {
-	//		logger.Warn("retrieving GitHub credentials", slog.Any("error", err))
-	//		return Response{StatusCode: http.StatusInternalServerError}, fmt.Errorf("unable to retrieve GitHub Handler credentials from environment")
-	//	}
-	//}
-	//
-	//// retrieve GitHub Handler credentials if they are not already set
-	//if gc.githubController == nil {
-	//	if err = gc.RetrieveClientCredsFromApp(gc.ctx, request); err != nil {
-	//		logger.Warn("retrieving GitHub Handler credentials", slog.Any("error", err))
-	//		return Response{StatusCode: http.StatusInternalServerError}, fmt.Errorf("unable to retrieve GitHub Handler credentials")
-	//	}
-	//}
-
-	if err = gc.githubController.ValidateWebhookSecret(request.Body, request.Headers); err != nil {
+	h.logger.Debug("Reading req body...")
+	if err = h.githubController.ValidateWebhookSecret(req.Body, req.Headers); err != nil {
 		logger.Error("validating signature", slog.Any("error", err))
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
 	}
-	logger.Debug("request is valid")
+	logger.Debug("req is valid")
 
-	event, err := github.ParseWebHook(eventType, []byte(request.Body))
+	event, err := github.ParseWebHook(eventType, []byte(req.Body))
 	if err != nil {
 		logger.Warn("parsing webhook payload", slog.Any("error", err))
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("invalid payload")
 	}
 
-	if err = gc.awsController.PutS3Object(eventType, os.Getenv("S3_BUCKET_NAME"), request); err != nil {
+	if err = h.awsController.PutS3Object(eventType, os.Getenv("S3_BUCKET_NAME"), []byte(req.Body)); err != nil {
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
 
 	pCtx := promotion.Context{
 		EventType: &eventType,
 		Logger:    logger.With("routine", "promotion.Context"),
-		Promoter:  gc.promoter,
+		Promoter:  h.promoter,
 	}
 
 	logger = logger.With(slog.Any("context", pCtx))
@@ -144,7 +135,7 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		pCtx.HeadRef = e.Ref // already fully qualified
 		pCtx.HeadSHA = e.After
 
-		if nextStage, isPromotable := gc.promoter.IsPromotableRef(*e.Ref); isPromotable {
+		if nextStage, isPromotable := h.promoter.IsPromotableRef(*e.Ref); isPromotable {
 			pCtx.BaseRef = helpers.NormaliseRefPtr(nextStage)
 		} else {
 			msg := "ignoring push event on non-promotion branch"
@@ -153,33 +144,33 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		}
 
 		var pr *github.PullRequest
-		if pr, _ = gc.githubController.FindPullRequest(pCtx); pr != nil {
+		if pr, _ = h.githubController.FindPullRequest(pCtx); pr != nil {
 			// PR already exists covering this push event
-			logger.Info("skipping recreation of existing promotion request")
+			logger.Info("skipping recreation of existing promotion req")
 		}
 
 		if pr == nil {
-			logger.Info("creating promotion request")
-			pr, err = gc.githubController.CreatePullRequest(pCtx)
+			logger.Info("creating promotion req")
+			pr, err = h.githubController.CreatePullRequest(pCtx)
 			if err != nil {
-				logger.Error("failed to create promotion request", slog.Any("error", err))
+				logger.Error("failed to create promotion req", slog.Any("error", err))
 				return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 			}
-			logger.Info("created promotion request", slog.String("url", *pr.URL))
+			logger.Info("created promotion req", slog.String("url", *pr.URL))
 		}
 
 		return helpers.Response{
-			Body:       fmt.Sprintf("Created promotion request: %s", pr.GetURL()),
+			Body:       fmt.Sprintf("Created promotion req: %s", pr.GetURL()),
 			StatusCode: http.StatusCreated,
 		}, nil
 
 	case *github.PullRequestEvent:
-		logger.Debug("processing pull request event...")
+		logger.Debug("processing pull req event...")
 		switch *e.Action {
 		case "opened", "edited", "ready_for_review", "reopened", "unlocked":
 			// pass
 		default:
-			logger.Info("ignoring pull request event", slog.String("action", *e.Action))
+			logger.Info("ignoring pull req event", slog.String("action", *e.Action))
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
@@ -189,12 +180,12 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		pCtx.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
-		logger.Info("parsed pull request event")
+		logger.Info("parsed pull req event")
 
 	case *github.PullRequestReviewEvent:
-		logger.Debug("processing pull request review event...")
+		logger.Debug("processing pull req review event...")
 		if *e.Review.State != "approved" {
-			logger.Info("ignoring non-approved pull request review event", slog.String("state", *e.Review.State))
+			logger.Info("ignoring non-approved pull req review event", slog.String("state", *e.Review.State))
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
@@ -204,7 +195,7 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		pCtx.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
-		logger.Info("parsed pull request review event")
+		logger.Info("parsed pull req review event")
 
 	case *github.CheckSuiteEvent:
 		logger.Debug("processing check suite event...")
@@ -218,7 +209,7 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		pCtx.HeadSHA = e.CheckSuite.HeadSHA
 
 		for _, pr := range e.CheckSuite.PullRequests {
-			if *pr.Head.SHA == *pCtx.HeadSHA && gc.promoter.IsPromotionRequest(pr) {
+			if *pr.Head.SHA == *pCtx.HeadSHA && h.promoter.IsPromotionRequest(pr) {
 				pCtx.BaseRef = helpers.NormaliseRefPtr(*pr.Base.Ref)
 				pCtx.HeadRef = helpers.NormaliseRefPtr(*pr.Head.Ref)
 				break
@@ -226,7 +217,7 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		}
 
 		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
-			logger.Info("ignoring check suite event without matching promotion request")
+			logger.Info("ignoring check suite event without matching promotion req")
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
@@ -280,7 +271,7 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		pCtx.HeadSHA = e.WorkflowRun.HeadSHA
 
 		for _, pr := range e.WorkflowRun.PullRequests {
-			if *pr.Head.SHA == *pCtx.HeadSHA && gc.promoter.IsPromotionRequest(pr) {
+			if *pr.Head.SHA == *pCtx.HeadSHA && h.promoter.IsPromotionRequest(pr) {
 				pCtx.BaseRef = helpers.NormaliseRefPtr(*pr.Base.Ref)
 				pCtx.HeadRef = helpers.NormaliseRefPtr(*pr.Head.Ref)
 				break
@@ -288,7 +279,7 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		}
 
 		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
-			logger.Info("Ignoring check suite event without matching promotion request")
+			logger.Info("Ignoring check suite event without matching promotion req")
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
@@ -299,16 +290,16 @@ func (gc *Handler) Run(request helpers.Request) (response helpers.Response, err 
 		return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
-	// ignore events without an open promotion request
+	// ignore events without an open promotion req
 	if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
-		// find matching promotion request by head SHA and populate missing refs
-		if _, err = gc.githubController.FindPullRequest(pCtx); err != nil {
-			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
+		// find matching promotion req by head SHA and populate missing refs
+		if _, err = h.githubController.FindPullRequest(pCtx); err != nil {
+			logger.Error("failed to find promotion req", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
 			return helpers.Response{StatusCode: http.StatusInternalServerError}, nil
 		}
 	}
 
-	if err = gc.githubController.FastForwardRefToSha(pCtx); err != nil {
+	if err = h.githubController.FastForwardRefToSha(pCtx); err != nil {
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 	}
 	logger.Info("fast forward complete")

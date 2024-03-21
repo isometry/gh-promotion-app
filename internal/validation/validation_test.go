@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestWebhookSecret_ValidateSignature(t *testing.T) {
+func BenchmarkTestWebhookSecret_ValidateSignature(t *testing.B) {
 	testCases := []struct {
 		Name        string
 		Headers     map[string]string
@@ -54,8 +54,8 @@ func TestWebhookSecret_ValidateSignature(t *testing.T) {
 
 	_inst := validation.WebhookSecret("key")
 	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			if err := _inst.ValidateSignature([]byte(tc.Body), tc.Headers); (err != nil) != tc.ExpectError {
+		t.Run(tc.Name, func(t *testing.B) {
+			if err := _inst.ValidateSignature(tc.Body, tc.Headers); (err != nil) != tc.ExpectError {
 				t.Errorf("WebhookSecret.ValidateSignature() error = %v, expectError %v", err, tc.ExpectError)
 			}
 		})

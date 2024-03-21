@@ -1,17 +1,16 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/pkg/errors"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -75,13 +74,13 @@ func (a *AWS) RetrieveCredentials(ctx context.Context, key string, encrypted boo
 	return ssmResponse.Parameter.Value, nil
 }
 
-func (a *AWS) PutS3Object(eventType, bucket string, request helpers.Request) error {
+func (a *AWS) PutS3Object(eventType, bucket string, body []byte) error {
 	if bucket != "" {
 		key := fmt.Sprintf("%s.%s", time.Now().UTC().Format(time.RFC3339Nano), eventType)
 		_, err := a.s3Client.PutObject(a.ctx, &s3.PutObjectInput{
 			Bucket:      &bucket,
 			Key:         aws.String(key),
-			Body:        strings.NewReader(request.Body),
+			Body:        bytes.NewReader(body),
 			ContentType: aws.String("application/json"),
 		})
 		if err != nil {

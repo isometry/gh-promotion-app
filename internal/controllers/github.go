@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
+	"github.com/pkg/errors"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"io"
@@ -48,6 +49,9 @@ func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 			Level: slog.LevelDebug,
 		})).With("controller", "github")
 	}
+	if err := _inst.initialiseClients(opts...); err != nil {
+		return nil, errors.Wrap(err, "controller.github: failed to initialise clients")
+	}
 	return _inst, nil
 }
 
@@ -69,64 +73,66 @@ type Credentials struct {
 	HmacSecret     []byte                    `json:"-"`
 }
 
-func (g *GitHub) GetClients(options ...GHOption) (*github.Client, *githubv4.Client, error) {
+func (g *GitHub) initialiseClients(options ...GHOption) error {
 	for _, opt := range options {
 		opt(g)
 	}
 
 	roundTripper := &loggingRoundTripper{logger: g.logger}
 	if g.Token != "" {
-		cv3 := github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
+		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
+		g.clientV3 = github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
 		src := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: g.Token},
 		)
 		httpClient := oauth2.NewClient(g.ctx, src)
-		cv4 := githubv4.NewClient(httpClient)
-		return cv3, cv4, nil
+		g.clientV4 = githubv4.NewClient(httpClient)
+		return nil
 	}
 
+	g.logger.Debug("Spawning clients using GitHub application credentials...")
 	transport, err := ghinstallation.NewAppsTransport(roundTripper, g.AppId, []byte(g.PrivateKey))
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	authTransport := &http.Client{Transport: transport}
-	cv3 := github.NewClient(authTransport)
-	cv4 := githubv4.NewClient(authTransport)
+	g.clientV3 = github.NewClient(authTransport)
+	g.clientV4 = githubv4.NewClient(authTransport)
 
-	return cv3, cv4, nil
+	return nil
 }
 
 func (g *GitHub) ValidateWebhookSecret(secret string, headers map[string]string) error {
-	return g.WebhookSecret.ValidateSignature([]byte(secret), headers)
+	return g.WebhookSecret.ValidateSignature(secret, headers)
 }
 
 func (g *GitHub) FindPullRequest(pCtx promotion.Context) (*github.PullRequest, error) {
-	g.logger.Info("finding promotion requests", slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
+	g.logger.Info("Finding promotion requests...", slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
 	prListOptions := &github.PullRequestListOptions{
 		State: "open",
 	}
 
 	if pCtx.HeadRef != nil && *pCtx.HeadRef != "" {
-		g.logger.Info("limiting promotion request search to head ref", slog.String("head", *pCtx.HeadRef))
+		g.logger.Info("Limiting promotion request search to head ref...", slog.String("head", *pCtx.HeadRef))
 		prListOptions.Head = *pCtx.HeadRef
 	}
 
 	if pCtx.BaseRef != nil && *pCtx.BaseRef != "" {
 		// limit scope if we have g base ref
-		g.logger.Info("limiting promotion request search to base ref", slog.String("base", *pCtx.BaseRef))
+		g.logger.Info("Limiting promotion request search to base ref...", slog.String("base", *pCtx.BaseRef))
 		prListOptions.Base = *pCtx.BaseRef
 	}
 
 	prs, _, err := g.clientV3.PullRequests.List(g.ctx, *pCtx.Owner, *pCtx.Repository, prListOptions)
 	if err != nil {
-		g.logger.Error("failed to list pull requests", slog.Any("error", err))
+		g.logger.Error("Failed to list pull requests...", slog.Any("error", err))
 		return nil, err
 	}
 
 	for _, pr := range prs {
 		if *pr.Head.SHA == *pCtx.HeadRef && pCtx.Promoter.IsPromotionRequest(pr) {
-			g.logger.Info("found matching promotion request", slog.String("pr", *pr.URL))
+			g.logger.Info("Found matching promotion request...", slog.String("pr", *pr.URL))
 			return pr, nil
 		}
 	}
@@ -152,7 +158,7 @@ func (g *GitHub) CreatePullRequest(pCtx promotion.Context) (*github.PullRequest,
 // FastForwardRefToSha pushes a commit to a ref, used to merge an open pull request via fast-forward
 func (g *GitHub) FastForwardRefToSha(pCtx promotion.Context) error {
 	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
-	ctxLogger.Info("attempting fast forward", slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
+	ctxLogger.Debug("Attempting fast forward...", slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
 	reference := github.Reference{
 		Ref: helpers.NormaliseRefPtr(*pCtx.BaseRef),
 		Object: &github.GitObject{
@@ -165,7 +171,7 @@ func (g *GitHub) FastForwardRefToSha(pCtx promotion.Context) error {
 		return err
 	}
 
-	ctxLogger.Info("successful fast forward")
+	ctxLogger.Debug("Successful fast forward")
 	return nil
 }
 

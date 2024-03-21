@@ -101,7 +101,7 @@ package cmd
 //
 //	var ref string
 //	for _, tc := range testCases {
-//		t.Run(tc.Name, func(tt *testing.T) {
+//		t.Process(tc.Name, func(tt *testing.T) {
 //			if tc.CreateEmptyCommit {
 //				headRef, err := createEmptyCommit(t)
 //				if err != nil {

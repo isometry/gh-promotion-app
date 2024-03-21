@@ -3,8 +3,8 @@ package cmd
 import (
 	"context"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/isometry/gh-promotion-app/cmd/helpers"
 	"github.com/isometry/gh-promotion-app/internal/handler"
+	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -12,20 +12,24 @@ import (
 var lambdaCmd = &cobra.Command{
 	Use:     "lambda",
 	Aliases: []string{"l", "serverless"},
-	PostRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
 		logger = logger.With("mode", "lambda")
-		logger.Info("spawned...")
+		logger.Info("Spawning...")
 
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		logger.Debug("Creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler()
 		if err != nil {
 			return errors.Wrap(err, "failed to create promotion handler")
 		}
 
-		runtime := helpers.Runtime{Handler: hdl}
+		logger.Debug("Creating runtime...")
+		runtime := runtime.NewRuntime(hdl,
+			runtime.WithLogger(logger.With("component", "runtime")))
 
+		logger.Info("Lambda starting...")
 		lambda.StartWithOptions(runtime.HandleEvent,
 			lambda.WithContext(context.Background()))
 
