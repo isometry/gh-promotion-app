@@ -4,14 +4,22 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v59/github"
+	"github.com/google/go-github/v60/github"
 )
 
 type WebhookSecret string
 
-func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) (err error) {
-	signature := headers[strings.ToLower(github.SHA256SignatureHeader)]
-	if signature == "" {
+func NewWebhookSecret(secret string) *WebhookSecret {
+	s := WebhookSecret(secret)
+	return &s
+}
+
+func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) error {
+	if s == nil {
+		return fmt.Errorf("missing webhook secret")
+	}
+	signature, found := headers[strings.ToLower(github.SHA256SignatureHeader)]
+	if !found {
 		return fmt.Errorf("missing HMAC-SHA256 signature")
 	}
 
