@@ -75,6 +75,12 @@ func TestIsPromotionRequest(t *testing.T) {
 			BaseRef:        "refs/heads/production",
 			ValidPromotion: false,
 		},
+		{
+			Name:           "invalid_order",
+			HeadRef:        "refs/heads/canary",
+			BaseRef:        "refs/heads/main",
+			ValidPromotion: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -120,6 +126,12 @@ func TestIsPromotableRef(t *testing.T) {
 		{
 			Name:           "invalid_stage",
 			Ref:            "refs/heads/feature",
+			ExpectedStage:  "",
+			ExpectedResult: false,
+		},
+		{
+			Name:           "invalid_next_stage",
+			Ref:            "refs/heads/production",
 			ExpectedStage:  "",
 			ExpectedResult: false,
 		},
