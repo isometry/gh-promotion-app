@@ -141,9 +141,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.PushEvent:
 		logger.Debug("processing push event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -151,7 +151,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadRef = e.Ref
 		pCtx.HeadSHA = e.After
 
-		if nextStage, isPromotable := h.promoter.IsPromotableRef(*e.Ref); isPromotable {
+		if nextStage, isPromotable := pCtx.Promoter.IsPromotableRef(*e.Ref); isPromotable {
 			pCtx.BaseRef = helpers.NormaliseFullRefPtr(nextStage)
 		} else {
 			msg := "ignoring push event on non-promotion branch"
@@ -183,9 +183,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.PullRequestEvent:
 		logger.Debug("processing pull request event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		switch *e.Action {
 		case "opened", "edited", "ready_for_review", "reopened", "unlocked":
@@ -206,9 +206,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.PullRequestReviewEvent:
 		logger.Debug("processing pull req review event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		if *e.Review.State != "approved" {
 			logger.Info("ignoring non-approved pull request review event with unprocessable review state...", slog.String("state", *e.Review.State))
@@ -226,9 +226,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.CheckSuiteEvent:
 		logger.Debug("processing check suite event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
 			logger.Info("ignoring incomplete check suite event with unprocessable check-suite status...", slog.String("status", *e.CheckSuite.Status))
@@ -240,7 +240,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadSHA = e.CheckSuite.HeadSHA
 
 		for _, pr := range e.CheckSuite.PullRequests {
-			if *pr.Head.SHA == *pCtx.HeadSHA && h.promoter.IsPromotionRequest(pr) {
+			if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
 				pCtx.BaseRef = helpers.NormaliseRefPtr(*pr.Base.Ref)
 				pCtx.HeadRef = helpers.NormaliseRefPtr(*pr.Head.Ref)
 				break
@@ -257,9 +257,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.DeploymentStatusEvent:
 		logger.Info("processing deployment status event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		state := *e.DeploymentStatus.State
 		if state != "success" {
@@ -277,9 +277,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.StatusEvent:
 		logger.Debug("processing status event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		state := *e.State
 		if state != "success" {
@@ -296,9 +296,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.WorkflowRunEvent:
 		logger.Debug("processing workflow run event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		status := *e.WorkflowRun.Status
 		if status != "completed" {
@@ -317,7 +317,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadSHA = e.WorkflowRun.HeadSHA
 
 		for _, pr := range e.WorkflowRun.PullRequests {
-			if *pr.Head.SHA == *pCtx.HeadSHA && h.promoter.IsPromotionRequest(pr) {
+			if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
 				pCtx.BaseRef = helpers.NormaliseRefPtr(*pr.Base.Ref)
 				pCtx.HeadRef = helpers.NormaliseRefPtr(*pr.Head.Ref)
 				break

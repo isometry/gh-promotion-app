@@ -38,22 +38,22 @@ func NewStagePromoter(stages []string) *Promoter {
 func NewDynamicPromoter(logger *slog.Logger, props map[string]string, promoterKey string) *Promoter {
 	stagesBlob, found := props[promoterKey]
 	if !found {
-		logger.Warn("Promoter key not found in properties. Defaulting to standard promoter...", slog.Any("key", promoterKey))
+		logger.Warn("promoter key not found in properties. Defaulting to standard promoter...", slog.Any("key", promoterKey))
 		return _defaultPromoter
 	}
 	if stagesBlob == "" {
-		logger.Warn("Promoter key found but empty. Defaulting to standard promoter...", slog.Any("key", promoterKey))
+		logger.Warn("promoter key found but empty. Defaulting to standard promoter...", slog.Any("key", promoterKey))
 		return _defaultPromoter
 	}
 
 	if strings.HasSuffix(stagesBlob, ",") {
-		logger.Warn("Promoter key found but trailing comma found. Removing...", slog.Any("key", promoterKey))
+		logger.Warn("promoter key found but trailing comma found. Removing...", slog.Any("key", promoterKey))
 		stagesBlob = strings.TrimSuffix(stagesBlob, ",")
 	}
 
 	stages := strings.Split(stagesBlob, ",")
 	if len(stages) == 0 {
-		logger.Warn("Promoter key found but no stages were defined. Defaulting to standard promoter...", slog.Any("key", promoterKey))
+		logger.Warn("promoter key found but no stages were defined. Defaulting to standard promoter...", slog.Any("key", promoterKey))
 		return _defaultPromoter
 	}
 	logger.Debug("dynamic promoter stages loaded...", slog.Any("stages", stages))

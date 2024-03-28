@@ -31,7 +31,7 @@ var lambdaCmd = &cobra.Command{
 			handler.WithAuthMode(githubAuthMode),
 			handler.WithSSMKey(githubSSMKey),
 			handler.WithToken(githubToken),
-			handler.WithWebhookSecret(webhookSecret), // @TODO -> This breaks in lambda, we need to fetch it from SSM
+			handler.WithWebhookSecret(webhookSecret),
 			handler.WithPromoter(promoter),
 			handler.WithDynamicPromoterKey(dynamicPromoterKey),
 			handler.WithContext(cmd.Context()),
