@@ -5,6 +5,7 @@ import (
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"strings"
 	"time"
 )
 
@@ -14,30 +15,25 @@ type argType interface {
 
 var envMapString = map[*string]boundEnvVar[string]{
 	&githubToken: {
-		Name:        "github.token",
-		Env:         "GITHUB_TOKEN",
+		Name:        "github-token",
 		Description: "When specified, the GitHub token to use for API requests",
 		Hidden:      true,
 	},
 	&githubAuthMode: {
-		Name:        "github.auth-serviceMode",
-		Env:         "GITHUB_AUTH_MODE",
+		Name:        "github-auth-mode",
 		Description: "Authentication serviceMode. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' serviceMode is used as an automatic fallback.",
 		Short:       helpers.Ptr("A"),
 	},
 	&githubSSMKey: {
-		Name:        "github.ssm-key",
-		Env:         "GITHUB_APP_SSM_ARN",
+		Name:        "github-app-ssm-arn",
 		Description: "The SSM parameter key to use when fetching GitHub App credentials",
 	},
 	&webhookSecret: {
-		Name:        "github.webhook-secret",
-		Env:         "GITHUB_WEBHOOK_SECRET",
+		Name:        "github-webhook-secret",
 		Description: "The secret to use when validating incoming GitHub webhook payloads. If not specified, no validation is performed",
 	},
 	&dynamicPromoterKey: {
-		Name:        "promotion.dynamic-key",
-		Env:         "PROMOTION_DYNAMIC_KEY",
+		Name:        "promotion-custom-attribute",
 		Description: "The key to use when fetching the dynamic promoter configuration",
 		Default:     helpers.Ptr("gitops-promotion-path"),
 	},
@@ -46,39 +42,43 @@ var envMapString = map[*string]boundEnvVar[string]{
 var envMapBool = map[*bool]boundEnvVar[bool]{
 	&serviceMode: {
 		Name:        "service",
-		Env:         "SERVICE_MODE",
 		Description: "If set to true, the service will run in 'service' mode. Otherwise, it will run in 'lambda' mode by default",
 	},
 	&callerTrace: {
-		Name:        "logger.caller-trace",
-		Env:         "CALLER_TRACE",
+		Name:        "caller-trace",
 		Description: "Enable caller trace in logs",
 		Short:       helpers.Ptr("V"),
 	},
 	&dynamicPromoter: {
-		Name:        "promotion.dynamic",
-		Env:         "PROMOTION_DYNAMIC",
+		Name:        "promotion-dynamic",
 		Description: "Enable dynamic promotion",
 	},
 }
 
 var envMapCount = map[*int]boundEnvVar[int]{
 	&verbosity: {
-		Name:        "logger.verbose",
-		Env:         "VERBOSITY",
+		Name:        "verbose",
 		Description: "Increase logger verbosity (default WarnLevel)",
 		Short:       helpers.Ptr("v"),
 	},
 }
 
 func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
-	viper.AutomaticEnv()
+
 	for v, cfg := range m {
-		_ = viper.BindEnv(cfg.Env)
-		desc := fmt.Sprintf("[%s] %s", cfg.Env, cfg.Description)
+		desc := cfg.Description
+		if cfg.Env != nil {
+			desc = fmt.Sprintf("[%s] %s", *cfg.Env, desc)
+		} else {
+			desc = fmt.Sprintf("[%s] %s", strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(cfg.Name)), desc)
+		}
+
 		switch any(v).(type) {
 		case *string:
-			def := viper.GetString(cfg.Env)
+			var def string
+			if cfg.Env != nil {
+				def = viper.GetString(*cfg.Env)
+			}
 			if cfg.Default != nil {
 				def = (any(*cfg.Default)).(string)
 			}
@@ -89,7 +89,10 @@ func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
 				cmd.PersistentFlags().StringVarP(sv, cfg.Name, *cfg.Short, def, desc)
 			}
 		case *bool:
-			def := viper.GetBool(cfg.Env)
+			var def bool
+			if cfg.Env != nil {
+				def = viper.GetBool(*cfg.Env)
+			}
 			if cfg.Default != nil {
 				def = (any(*cfg.Default)).(bool)
 			}
@@ -107,7 +110,10 @@ func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
 				cmd.PersistentFlags().CountVarP(iv, cfg.Name, *cfg.Short, desc)
 			}
 		case *time.Duration:
-			def := viper.GetDuration(cfg.Env)
+			var def time.Duration
+			if cfg.Env != nil {
+				def = viper.GetDuration(*cfg.Env)
+			}
 			if cfg.Default != nil {
 				def = (any(*cfg.Default)).(time.Duration)
 			}
@@ -121,8 +127,23 @@ func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
 			panic("unhandled default case")
 		}
 
+		if cfg.Env != nil {
+			_ = viper.BindEnv(cfg.Name, *cfg.Env)
+		} else {
+			_ = viper.BindEnv(cfg.Name, strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(cfg.Name)))
+		}
+
 		if cfg.Hidden {
 			_ = cmd.PersistentFlags().MarkHidden(cfg.Name)
+		}
+	}
+}
+
+func loadViperVariables(cmd *cobra.Command) {
+	for _, key := range viper.AllKeys() {
+		f := cmd.Flags().Lookup(key)
+		if f != nil && viper.Get(key) != nil {
+			_ = cmd.Flags().Lookup(key).Value.Set(viper.GetString(key))
 		}
 	}
 }

@@ -62,7 +62,9 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 	}
 
 	awsCtl, err := controllers.NewAWSController(
-		controllers.WithContext(_inst.ctx))
+		controllers.WithAWSLogger(_inst.logger.With("component", "aws-controller")),
+		controllers.WithAWSContext(_inst.ctx))
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create AWS controller")
 	}
@@ -84,7 +86,6 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 
 func (h *Handler) ValidateRequest(eventType string) (*helpers.Response, error) {
 	if slices.Index(HandledEventTypes, eventType) == -1 {
-		h.logger.Info("unhandled event")
 		return &helpers.Response{StatusCode: http.StatusBadRequest}, fmt.Errorf("unhandled event type: %s", eventType)
 	}
 	return nil, nil
@@ -103,8 +104,17 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	// Validate the request
 	resp, err := h.ValidateRequest(eventType)
 	if err != nil {
+		logger.Warn("validating request", slog.Any("error", err))
 		return *resp, err
 	}
+
+	// @TODO -> Handle fetching from SSM if empty
+	h.logger.Debug("validating request body...")
+	if err = h.githubController.ValidateWebhookSecret(body, headers); err != nil {
+		logger.Warn("validating signature", slog.Any("error", err))
+		return helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
+	}
+	logger.Debug("request body is valid")
 
 	// Refresh credentials if needed
 	h.logger.Debug("refreshing credentials...")
@@ -113,13 +123,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		h.logger.Warn("failed to authenticate", slog.Any("error", err))
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
-
-	h.logger.Debug("reading request body...")
-	if err = h.githubController.ValidateWebhookSecret(body, headers); err != nil {
-		logger.Warn("validating signature", slog.Any("error", err))
-		return helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
-	}
-	logger.Debug("request is valid")
 
 	event, err := github.ParseWebHook(eventType, body)
 	if err != nil {
@@ -131,7 +134,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
 
-	pCtx := promotion.Context{
+	pCtx := &promotion.Context{
 		EventType: &eventType,
 		Logger:    h.logger.With("routine", "promotion.Context"),
 	}
@@ -139,11 +142,11 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	logger = logger.With(slog.Any("context", pCtx))
 	switch e := event.(type) {
 	case *github.PushEvent:
-		logger.Debug("processing push event...")
+		logger.Debug("processing push_event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -151,7 +154,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadRef = e.Ref
 		pCtx.HeadSHA = e.After
 
-		if nextStage, isPromotable := h.promoter.IsPromotableRef(*e.Ref); isPromotable {
+		if nextStage, isPromotable := pCtx.Promoter.IsPromotableRef(*e.Ref); isPromotable {
 			pCtx.BaseRef = helpers.NormaliseFullRefPtr(nextStage)
 		} else {
 			msg := "ignoring push event on non-promotion branch"
@@ -160,14 +163,14 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		}
 
 		var pr *github.PullRequest
-		if pr, _ = h.githubController.FindPullRequest(&pCtx); pr != nil {
+		if pr, _ = h.githubController.FindPullRequest(pCtx); pr != nil {
 			// PR already exists covering this push event
 			logger.Info("skipping recreation of existing promotion request...", slog.String("url", *pr.URL))
 		}
 
 		if pr == nil {
 			logger.Debug("no existing PR found. Creating...")
-			pr, err = h.githubController.CreatePullRequest(&pCtx)
+			pr, err = h.githubController.CreatePullRequest(pCtx)
 			if err != nil {
 				logger.Error("failed to create promotion request", slog.Any("error", err))
 				return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
@@ -183,9 +186,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.PullRequestEvent:
 		logger.Debug("processing pull request event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		switch *e.Action {
 		case "opened", "edited", "ready_for_review", "reopened", "unlocked":
@@ -206,9 +209,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.PullRequestReviewEvent:
 		logger.Debug("processing pull req review event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		if *e.Review.State != "approved" {
 			logger.Info("ignoring non-approved pull request review event with unprocessable review state...", slog.String("state", *e.Review.State))
@@ -226,9 +229,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.CheckSuiteEvent:
 		logger.Debug("processing check suite event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
 			logger.Info("ignoring incomplete check suite event with unprocessable check-suite status...", slog.String("status", *e.CheckSuite.Status))
@@ -240,7 +243,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadSHA = e.CheckSuite.HeadSHA
 
 		for _, pr := range e.CheckSuite.PullRequests {
-			if *pr.Head.SHA == *pCtx.HeadSHA && h.promoter.IsPromotionRequest(pr) {
+			if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
 				pCtx.BaseRef = helpers.NormaliseRefPtr(*pr.Base.Ref)
 				pCtx.HeadRef = helpers.NormaliseRefPtr(*pr.Head.Ref)
 				break
@@ -257,9 +260,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.DeploymentStatusEvent:
 		logger.Info("processing deployment status event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		state := *e.DeploymentStatus.State
 		if state != "success" {
@@ -277,9 +280,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.StatusEvent:
 		logger.Debug("processing status event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		state := *e.State
 		if state != "success" {
@@ -296,9 +299,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	case *github.WorkflowRunEvent:
 		logger.Debug("processing workflow run event...")
 		logger.Debug("assigning promoter...")
-		promoter := h.promoter
-		if promoter == nil {
-			promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+		pCtx.Promoter = h.promoter
+		if pCtx.Promoter == nil {
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
 		}
 		status := *e.WorkflowRun.Status
 		if status != "completed" {
@@ -317,7 +320,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadSHA = e.WorkflowRun.HeadSHA
 
 		for _, pr := range e.WorkflowRun.PullRequests {
-			if *pr.Head.SHA == *pCtx.HeadSHA && h.promoter.IsPromotionRequest(pr) {
+			if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
 				pCtx.BaseRef = helpers.NormaliseRefPtr(*pr.Base.Ref)
 				pCtx.HeadRef = helpers.NormaliseRefPtr(*pr.Head.Ref)
 				break
@@ -339,13 +342,13 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	// ignore events without an open promotion req
 	if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
 		// find matching promotion req by head SHA and populate missing refs
-		if _, err = h.githubController.FindPullRequest(&pCtx); err != nil {
+		if _, err = h.githubController.FindPullRequest(pCtx); err != nil {
 			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
 			return helpers.Response{StatusCode: http.StatusInternalServerError}, nil
 		}
 	}
 
-	if err = h.githubController.FastForwardRefToSha(&pCtx); err != nil {
+	if err = h.githubController.FastForwardRefToSha(pCtx); err != nil {
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 	}
 	logger.Info("fast forward complete")

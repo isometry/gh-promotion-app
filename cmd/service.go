@@ -19,6 +19,7 @@ var serviceCmd = &cobra.Command{
 	Use:     "service",
 	Aliases: []string{"s", "serve", "standalone", "server"},
 	PreRunE: func(cmd *cobra.Command, args []string) error {
+		loadViperVariables(cmd)
 		logger = logger.With("mode", "service")
 		logger.Info("spawning...")
 
@@ -27,6 +28,7 @@ var serviceCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var promoter *promotion.Promoter
 		if !dynamicPromoter {
+			logger.Info("default promoter activated...")
 			promoter = promotion.NewDefaultPromoter()
 		} else {
 			logger.Info("dynamic promoter activated...")

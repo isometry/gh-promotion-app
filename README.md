@@ -14,7 +14,7 @@
 ## How it works
 
 The `gh-promotion-app` is a service that automates the promotion of GitHub branch across environments. It is designed to
-be used in conjunction with GitHub webhooks.
+operate as a GitHub App and respond to the webhook events to which its App is subscribed.
 It currently supports the following event types:
 
 | Event Type            | Description                                     |
@@ -22,16 +22,17 @@ It currently supports the following event types:
 | `push`                | Change is pushed to a given branch              |
 | `pull_request`        | Pull request is opened, closed, or synchronized |
 | `pull_request_review` | Pull request review is submitted                |
-| `check_suite`         | Check suite is requested                        |
-| `deployment_status`   | Deployment status is requested                  |
+| `check_suite`         | Check suite is completed                        |
+| `deployment_status`   | Deployment status is completed                  |
 | `status`              | When the status of a Git commit changes         |
-| `workflow_run`        | Workflow run is requested                       |
+| `workflow_run`        | Workflow run is completed                       |
 
 ### Overview
 
-<img src="https://github.com/isometry/gh-promotion-app/blob/main/docs/images/overview.png?raw=true" width="300"></img>
+<img src="https://github.com/isometry/gh-promotion-app/blob/main/docs/images/overview.png?raw=true" width="500"></img>
 
 ### Usage
+
 ```console
 Usage:
    [flags]

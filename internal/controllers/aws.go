@@ -8,9 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/smithy-go/logging"
 	"github.com/pkg/errors"
+	"io"
 	"log/slog"
-	"os"
 	"time"
 )
 
@@ -30,20 +31,21 @@ func NewAWSController(opts ...Option) (*AWS, error) {
 	for _, opt := range opts {
 		opt(_inst)
 	}
+	if _inst.logger == nil {
+		_inst.logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	}
+	_inst.logger = _inst.logger.With("controller", "AWS")
 	if _inst.ctx == nil {
 		_inst.ctx = context.Background()
 	}
 	if _inst.config == nil {
+		_inst.logger.Debug("loading default AWS configuration...")
 		cfg, err := config.LoadDefaultConfig(_inst.ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to load AWS configuration")
 		}
+		cfg.Logger = newAWSLogger(_inst.logger)
 		_inst.config = &cfg
-	}
-	if _inst.logger == nil {
-		_inst.logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})).With("controller", "aws")
 	}
 
 	_inst.s3Client = s3.NewFromConfig(*_inst.config)
@@ -51,9 +53,10 @@ func NewAWSController(opts ...Option) (*AWS, error) {
 	return _inst, nil
 }
 
-func (a *AWS) GetSecret(ctx context.Context, key string, encrypted bool) (*string, error) {
-	ssmResponse, err := a.ssmClient.GetParameter(ctx, &ssm.GetParameterInput{
-		Name:           aws.String(os.Getenv(key)),
+func (a *AWS) GetSecret(key string, encrypted bool) (*string, error) {
+	a.logger.With("key", key).Debug("fetching SSM secret...")
+	ssmResponse, err := a.ssmClient.GetParameter(a.ctx, &ssm.GetParameterInput{
+		Name:           aws.String(key),
 		WithDecryption: aws.Bool(encrypted),
 	})
 	if err != nil {
@@ -76,4 +79,15 @@ func (a *AWS) PutS3Object(eventType, bucket string, body []byte) error {
 		}
 	}
 	return nil
+}
+
+type awsLogger struct {
+	logger *slog.Logger
+}
+
+func newAWSLogger(logger *slog.Logger) *awsLogger {
+	return &awsLogger{logger}
+}
+func (a *awsLogger) Logf(classification logging.Classification, format string, args ...any) {
+	a.logger.Debug(fmt.Sprintf("[%v] %s", classification, fmt.Sprintf(format, args...)))
 }

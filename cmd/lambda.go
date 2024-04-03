@@ -14,6 +14,7 @@ var lambdaCmd = &cobra.Command{
 	Use:     "lambda",
 	Aliases: []string{"l", "serverless"},
 	PreRunE: func(cmd *cobra.Command, args []string) error {
+		loadViperVariables(cmd)
 		logger = logger.With("mode", "lambda")
 		logger.Info("spawning...")
 
@@ -22,6 +23,7 @@ var lambdaCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var promoter *promotion.Promoter
 		if !dynamicPromoter {
+			logger.Info("default promoter activated...")
 			promoter = promotion.NewDefaultPromoter()
 		} else {
 			logger.Info("dynamic promoter activated...")
@@ -31,7 +33,7 @@ var lambdaCmd = &cobra.Command{
 			handler.WithAuthMode(githubAuthMode),
 			handler.WithSSMKey(githubSSMKey),
 			handler.WithToken(githubToken),
-			handler.WithWebhookSecret(webhookSecret), // @TODO -> This breaks in lambda, we need to fetch it from SSM
+			handler.WithWebhookSecret(webhookSecret),
 			handler.WithPromoter(promoter),
 			handler.WithDynamicPromoterKey(dynamicPromoterKey),
 			handler.WithContext(cmd.Context()),

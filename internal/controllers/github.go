@@ -65,13 +65,15 @@ type Credentials struct {
 	Token         string                    `json:"token,omitempty"`
 }
 
+// @TODO -> Separate into two functions initialise (Authorize) && authenticate (GetClients)
+
 func (g *GitHub) Authenticate(body []byte) error {
 	roundTripper := &loggingRoundTripper{logger: g.logger}
-	g.logger.Debug("authenticating...", slog.String("authMode", g.authMode))
-	switch g.authMode {
+	g.logger.Debug("initialising clients...", slog.String("authMode", g.authMode))
+	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
 	case "token":
 		if g.clientV3 != nil && g.clientV4 != nil {
-			g.logger.Debug("already authenticated. Skipping...")
+			g.logger.Debug("clients already initialised. Skipping...")
 			return nil
 		}
 
@@ -90,15 +92,15 @@ func (g *GitHub) Authenticate(body []byte) error {
 		g.clientV4 = githubv4.NewClient(httpClient)
 		g.logger.Debug("successfully spawned clients using PAT...")
 		return nil
-	case "ssm":
-		g.logger.Debug("authenticating using GitHub App credentials from SSM...")
+	case "ssm", "":
+		g.logger.Debug("fetching credentials using GitHub App credentials from SSM...")
 		if !g.tokenTTL.After(time.Now()) && g.clientV3 != nil && g.clientV4 != nil {
 			g.logger.Debug("existing valid token found. Skipping...")
 			return nil
 		}
 
 		g.logger.Debug("spawning clients using GitHub application credentials from SSM...")
-		secret, err := g.awsController.GetSecret(g.ctx, g.ssmKey, true)
+		secret, err := g.awsController.GetSecret(g.ssmKey, true)
 		if err != nil {
 			return errors.Wrap(err, "failed to fetch GitHub App credentials from SSM")
 		}

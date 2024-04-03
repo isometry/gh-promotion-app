@@ -50,7 +50,7 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		break
 	default:
 		r.logger.Debug("rejecting HTTP request...", slog.Any("requestor", req.RemoteAddr), "reason", "method not allowed", slog.Any("method", req.Method))
-		resp.WriteHeader(http.StatusMethodNotAllowed)
+		helpers.RespondHTTP(helpers.Response{StatusCode: http.StatusMethodNotAllowed}, nil, resp)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		r.logger.Error("failed to read request body", slog.Any("error", err))
-		resp.WriteHeader(http.StatusInternalServerError)
+		helpers.RespondHTTP(helpers.Response{StatusCode: http.StatusInternalServerError}, err, resp)
 		return
 	}
 	response, err := r.Handler.Process(body, headers)

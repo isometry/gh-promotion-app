@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -28,14 +30,16 @@ var (
 )
 
 type boundEnvVar[T string | bool | int | time.Duration] struct {
-	Name, Env, Description string
-	Short                  *string
-	Hidden                 bool
-	Default                *T
+	Name, Description string
+	Env, Short        *string
+	Hidden            bool
+	Default           *T
 }
 
 var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		loadViperVariables(cmd)
+
 		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: callerTrace,
 			Level:     slog.LevelWarn - slog.Level(verbosity*4),
@@ -57,6 +61,9 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	viper.AutomaticEnv()
+	viper.EnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+
 	bindEnvMap(rootCmd, envMapString)
 	bindEnvMap(rootCmd, envMapBool)
 	bindEnvMap(rootCmd, envMapCount)
