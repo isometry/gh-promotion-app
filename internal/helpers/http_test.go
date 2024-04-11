@@ -2,11 +2,11 @@ package helpers_test
 
 import (
 	"errors"
-	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/stretchr/testify/assert"
 )
 

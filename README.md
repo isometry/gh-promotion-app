@@ -45,7 +45,7 @@ Available Commands:
   service     
 
 Flags:
-  -A, --github.auth-serviceMode string   [GITHUB_AUTH_MODE] Authentication serviceMode. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' serviceMode is used as an automatic fallback.
+  -A, --github.auth-serviceMode string   [GITHUB_AUTH_MODE] Authentication serviceMode. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' credentials provider is used as an automatic fallback.
       --github.ssm-key string            [GITHUB_APP_SSM_ARN] The SSM parameter key to use when fetching GitHub App credentials
       --github.webhook-secret string     [GITHUB_WEBHOOK_SECRET] The secret to use when validating incoming GitHub webhook payloads. If not specified, no validation is performed
   -h, --help                             help for this command

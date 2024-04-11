@@ -1,8 +1,9 @@
 package controllers
 
 import (
-	"github.com/isometry/gh-promotion-app/internal/validation"
 	"log/slog"
+
+	"github.com/isometry/gh-promotion-app/internal/validation"
 )
 
 func WithToken(token string) GHOption {

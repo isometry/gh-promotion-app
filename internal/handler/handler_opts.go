@@ -2,9 +2,10 @@ package handler
 
 import (
 	"context"
+	"log/slog"
+
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
-	"log/slog"
 )
 
 func WithLogger(logger *slog.Logger) Option {

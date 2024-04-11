@@ -1,9 +1,10 @@
 package helpers_test
 
 import (
+	"testing"
+
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestNormaliseFullRef(t *testing.T) {

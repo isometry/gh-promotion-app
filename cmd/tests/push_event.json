@@ -3,8 +3,7 @@
   "before": "0000000000000000000000000000000000000000",
   "after": "{{ .Ref }}",
   "repository": {
-    "id": 724722616,
-    "node_id": "R_kgDOKzJjuA",
+    "id": 1234567,
     "name": "{{ .Repository }}",
     "full_name": "{{ .FullName }}",
     "private": true,
@@ -12,9 +11,7 @@
       "name": "{{ .Owner }}",
       "email": null,
       "login": "{{ .Owner }}",
-      "id": 29751843,
-      "node_id": "MDEyOk9yZ2FuaXphdGlvbjI5NzUxODQz",
-      "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",
+      "id": 1234567,
       "gravatar_id": "",
       "url": "https://api.github.com/users/{{ .Owner }}",
       "html_url": "https://github.com/{{ .Owner }}",
@@ -96,30 +93,19 @@
     "allow_forking": true,
     "is_template": true,
     "web_commit_signoff_required": true,
-    "topics": [
-      "managed-by-gac",
-      "owner-engprod",
-      "prod-mtp",
-      "prod-networking"
-    ],
     "visibility": "private",
     "forks": 0,
-    "open_issues": 2,
+    "open_issues": 0,
     "watchers": 0,
-    "default_branch": "main",
+    "default_branch": "branch",
     "stargazers": 0,
-    "master_branch": "main",
+    "master_branch": "branch",
     "organization": "{{ .Owner }}",
     "custom_properties": {}
   },
-  "pusher": {
-    "name": "pcanilho",
-    "email": "paulo@canilho.net"
-  },
   "organization": {
     "login": "{{ .Owner }}",
-    "id": 29751843,
-    "node_id": "MDEyOk9yZ2FuaXphdGlvbjI5NzUxODQz",
+    "id": 1234567,
     "url": "https://api.github.com/orgs/{{ .Owner }}",
     "repos_url": "https://api.github.com/orgs/{{ .Owner }}/repos",
     "events_url": "https://api.github.com/orgs/{{ .Owner }}/events",
@@ -127,69 +113,23 @@
     "issues_url": "https://api.github.com/orgs/{{ .Owner }}/issues",
     "members_url": "https://api.github.com/orgs/{{ .Owner }}/members{/member}",
     "public_members_url": "https://api.github.com/orgs/{{ .Owner }}/public_members{/member}",
-    "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",
     "description": ""
   },
   "enterprise": {
-    "id": 13876,
+    "id": 1234567,
     "slug": "{{ .Owner }}",
-    "node_id": "E_kgDNNjQ",
-    "avatar_url": "https://avatars.githubusercontent.com/b/13876?v=4",
     "description": "",
     "website_url": "https://www.{{ .Owner }}.com/",
     "html_url": "https://github.com/enterprises/{{ .Owner }}",
     "created_at": "2022-06-24T07:59:31Z",
     "updated_at": "2024-03-07T21:49:21Z"
   },
-  "sender": {
-    "login": "pcanilho",
-    "id": 16003878,
-    "node_id": "MDQ6VXNlcjE2MDAzODc4",
-    "avatar_url": "https://avatars.githubusercontent.com/u/16003878?v=4",
-    "gravatar_id": "",
-    "url": "https://api.github.com/users/pcanilho",
-    "html_url": "https://github.com/pcanilho",
-    "followers_url": "https://api.github.com/users/pcanilho/followers",
-    "following_url": "https://api.github.com/users/pcanilho/following{/other_user}",
-    "gists_url": "https://api.github.com/users/pcanilho/gists{/gist_id}",
-    "starred_url": "https://api.github.com/users/pcanilho/starred{/owner}{/repo}",
-    "subscriptions_url": "https://api.github.com/users/pcanilho/subscriptions",
-    "organizations_url": "https://api.github.com/users/pcanilho/orgs",
-    "repos_url": "https://api.github.com/users/pcanilho/repos",
-    "events_url": "https://api.github.com/users/pcanilho/events{/privacy}",
-    "received_events_url": "https://api.github.com/users/pcanilho/received_events",
-    "type": "User",
-    "site_admin": false
-  },
   "installation": {
-    "id": 47932009,
-    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNDc5MzIwMDk="
+    "id": 1234567
   },
   "created": true,
   "deleted": false,
   "forced": false,
-  "base_ref": "refs/heads/main",
-  "compare": "https://github.com/{{ .Owner }}/{{ .Repository }}/compare/test-src",
-  "commits": [],
-  "head_commit": {
-    "id": "141c2de79c842f1a6489311f9a1006cbf6e4b1f6",
-    "tree_id": "56719d72e45d22ac308af6dd52adb7bd62577a77",
-    "distinct": true,
-    "message": "empty: trigger promotion",
-    "timestamp": "2024-03-14T11:38:08+01:00",
-    "url": "https://github.com/{{ .Owner }}/{{ .Repository }}/commit/141c2de79c842f1a6489311f9a1006cbf6e4b1f6",
-    "author": {
-      "name": "Robin Breathe",
-      "email": "robin.breathe@{{ .Owner }}.com",
-      "username": "isometry"
-    },
-    "committer": {
-      "name": "Robin Breathe",
-      "email": "robin.breathe@{{ .Owner }}.com",
-      "username": "isometry"
-    },
-    "added": [],
-    "removed": [],
-    "modified": []
-  }
+  "base_ref": "refs/heads/branch",
+  "commits": []
 }

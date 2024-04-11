@@ -1,44 +1,24 @@
 {
   "deployment_status": {
-    "url": "https://api.github.com/repos/{{ .FullName }}/deployments/1392310988/statuses/3400850533",
-    "id": 3400850533,
-    "node_id": "DES_kwDOKzJjuM7KtNxl",
+    "url": "https://api.github.com/repos/{{ .FullName }}/deployments/X/statuses/1234567",
+    "id": 1234567,
     "state": "pending",
-    "creator": {
-      "id": 131800383,
-      "node_id": "BOT_kgDOB9sdPw",
-      "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",
-      "gravatar_id": "",
-      "type": "Bot",
-      "site_admin": false
-    },
-    "description": "Application {{ .Repository }}--mtp-eu-west-3-main sync is Synced.\n",
     "created_at": "2024-03-16T04:35:45Z",
     "updated_at": "2024-03-16T04:35:45Z",
-    "deployment_url": "https://api.github.com/repos/{{ .FullName }}/deployments/1392310988",
+    "deployment_url": "https://api.github.com/repos/{{ .FullName }}/deployments/X",
     "repository_url": "https://api.github.com/repos/{{ .FullName }}",
     "performed_via_github_app": null
   },
   "deployment": {
-    "url": "https://api.github.com/repos/{{ .FullName }}/deployments/1392310988",
-    "id": 1392310988,
-    "node_id": "DE_kwDOKzJjuM5S_PrM",
+    "url": "https://api.github.com/repos/{{ .FullName }}/deployments/1234567",
+    "id": 1234567,
     "task": "deploy",
-    "original_environment": "dev/mtp/eu-west-3/main",
-    "environment": "dev/mtp/eu-west-3/main",
+    "environment": "X/Y/Z/W",
     "description": null,
     "created_at": "2024-03-16T04:35:45Z",
     "updated_at": "2024-03-16T04:35:45Z",
-    "statuses_url": "https://api.github.com/repos/{{ .FullName }}/deployments/1392310988/statuses",
+    "statuses_url": "https://api.github.com/repos/{{ .FullName }}/deployments/X/statuses",
     "repository_url": "https://api.github.com/repos/{{ .FullName }}",
-    "creator": {
-      "id": 131800383,
-      "node_id": "BOT_kgDOB9sdPw",
-      "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",
-      "gravatar_id": "",
-      "type": "Bot",
-      "site_admin": false
-    },
     "sha": "{{ .Ref }}",
     "ref": "{{ .Ref }}",
     "payload": {},
@@ -51,18 +31,14 @@
   "workflow_run": null,
   "action": "created",
   "repository": {
-    "id": 724722616,
-    "node_id": "R_kgDOKzJjuA",
+    "id": 1234567,
     "name": "{{ .Repository }}",
     "full_name": "{{ .FullName }}",
     "private": true,
     "owner": {
-      "id": 29751843,
-      "node_id": "MDEyOk9yZ2FuaXphdGlvbjI5NzUxODQz",
-      "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",
-      "gravatar_id": "",
       "type": "Organization",
-      "site_admin": false
+      "site_admin": false,
+      "login": "{{ .Owner }}"
     },
     "html_url": "https://github.com/{{ .FullName }}",
     "description": "Deployment configuration repository for the `{{ .Repository }}` domain.",
@@ -131,43 +107,23 @@
     "allow_forking": true,
     "is_template": true,
     "web_commit_signoff_required": true,
-    "topics": [
-      "managed-by-gac",
-      "owner-engprod",
-      "prod-mtp",
-      "prod-networking"
-    ],
     "visibility": "private",
     "forks": 0,
     "open_issues": 2,
     "watchers": 0,
-    "default_branch": "main",
+    "default_branch": "branch",
     "custom_properties": {}
   },
   "organization": {
-    "id": 29751843,
-    "node_id": "MDEyOk9yZ2FuaXphdGlvbjI5NzUxODQz",
-    "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",
+    "id": 1234567,
     "description": ""
   },
-  "enterprise": {
-    "id": 13876,
-    "node_id": "E_kgDNNjQ",
-    "avatar_url": "https://avatars.githubusercontent.com/b/13876?v=4",
-    "description": "",
-    "created_at": "2022-06-24T07:59:31Z",
-    "updated_at": "2024-03-07T21:49:21Z"
-  },
   "sender": {
-    "id": 131800383,
-    "node_id": "BOT_kgDOB9sdPw",
-    "avatar_url": "https://avatars.githubusercontent.com/u/29751843?v=4",
-    "gravatar_id": "",
+    "id": 1234567,
     "type": "Bot",
     "site_admin": false
   },
   "installation": {
-    "id": 47932009,
-    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNDc5MzIwMDk="
+    "id": 1234567
   }
 }

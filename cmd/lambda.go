@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/promotion"

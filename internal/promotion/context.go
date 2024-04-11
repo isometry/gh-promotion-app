@@ -1,8 +1,9 @@
 package promotion
 
 import (
-	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"log/slog"
+
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 )
 
 type Context struct {

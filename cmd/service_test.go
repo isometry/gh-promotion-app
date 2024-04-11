@@ -3,14 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/google/go-github/v60/github"
-	"github.com/isometry/gh-promotion-app/internal/controllers"
-	"github.com/isometry/gh-promotion-app/internal/handler"
-	"github.com/isometry/gh-promotion-app/internal/promotion"
-	"github.com/isometry/gh-promotion-app/internal/runtime"
-	"github.com/pkg/errors"
-	"github.com/shurcooL/githubv4"
-	"github.com/stretchr/testify/assert"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -19,6 +11,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-github/v60/github"
+	"github.com/isometry/gh-promotion-app/internal/controllers"
+	"github.com/isometry/gh-promotion-app/internal/handler"
+	"github.com/isometry/gh-promotion-app/internal/promotion"
+	"github.com/isometry/gh-promotion-app/internal/runtime"
+	"github.com/pkg/errors"
+	"github.com/shurcooL/githubv4"
+	"github.com/stretchr/testify/assert"
 )
 
 var (

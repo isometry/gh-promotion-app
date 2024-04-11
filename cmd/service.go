@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"net"
+	"net/http"
+	"time"
+
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/spf13/cobra"
-	"net"
-	"net/http"
-	"time"
 )
 
 var (

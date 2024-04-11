@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/isometry/gh-promotion-app/cmd"
 	"os"
+
+	"github.com/isometry/gh-promotion-app/cmd"
 )
 
 func main() {

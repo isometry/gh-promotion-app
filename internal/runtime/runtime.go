@@ -1,12 +1,13 @@
 package runtime
 
 import (
-	"github.com/isometry/gh-promotion-app/internal/handler"
-	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/isometry/gh-promotion-app/internal/handler"
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 )
 
 type Option func(*Runtime)

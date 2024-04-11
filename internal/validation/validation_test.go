@@ -1,10 +1,11 @@
 package validation_test
 
 import (
-	"github.com/google/go-github/v60/github"
-	"github.com/isometry/gh-promotion-app/internal/validation"
 	"strings"
 	"testing"
+
+	"github.com/google/go-github/v60/github"
+	"github.com/isometry/gh-promotion-app/internal/validation"
 )
 
 func TestWebhookSecret_ValidateSignature(t *testing.T) {

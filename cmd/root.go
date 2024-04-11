@@ -1,12 +1,14 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func Execute() error {
@@ -14,11 +16,10 @@ func Execute() error {
 }
 
 var (
-	serviceMode bool
-
 	dynamicPromoterKey string
 	dynamicPromoter    bool
 
+	runtimeMode    string
 	githubAuthMode string
 	githubToken    string
 	githubSSMKey   string
@@ -40,6 +41,7 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		loadViperVariables(cmd)
 
+		runtimeMode = strings.TrimSpace(runtimeMode)
 		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: callerTrace,
 			Level:     slog.LevelWarn - slog.Level(verbosity*4),
@@ -47,22 +49,30 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	PreRunE: func(cmd *cobra.Command, args []string) error {
-		if serviceMode {
+		switch runtimeMode {
+		case "service":
 			return serviceCmd.PreRunE(cmd, args)
+		case "lambda":
+			return lambdaCmd.PreRunE(cmd, args)
+		default:
+			return fmt.Errorf("invalid mode: %s", runtimeMode)
 		}
-		return lambdaCmd.PreRunE(cmd, args)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if serviceMode {
+		switch runtimeMode {
+		case "service":
 			return serviceCmd.RunE(cmd, args)
+		case "lambda":
+			return lambdaCmd.RunE(cmd, args)
+		default:
+			return fmt.Errorf("invalid mode: %s", runtimeMode)
 		}
-		return lambdaCmd.RunE(cmd, args)
 	},
 }
 
 func init() {
 	viper.AutomaticEnv()
-	viper.EnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	viper.EnvKeyReplacer(replacer)
 
 	bindEnvMap(rootCmd, envMapString)
 	bindEnvMap(rootCmd, envMapBool)

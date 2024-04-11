@@ -5,20 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/isometry/gh-promotion-app/internal/helpers"
-	"github.com/isometry/gh-promotion-app/internal/promotion"
-	"github.com/pkg/errors"
-	"github.com/shurcooL/githubv4"
-	"golang.org/x/oauth2"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v60/github"
+	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
+	"github.com/pkg/errors"
+	"github.com/shurcooL/githubv4"
+	"golang.org/x/oauth2"
 )
 
 type EventInstallationId struct {
@@ -138,6 +138,8 @@ func (g *GitHub) ValidateWebhookSecret(secret []byte, headers map[string]string)
 }
 
 func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, error) {
+	fmt.Printf("%+v\n", pCtx.Owner)
+	fmt.Printf("%+v\n", pCtx.Repository)
 	g.logger.Info("finding promotion requests...", slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
 	prListOptions := &github.PullRequestListOptions{
 		State: "open",

@@ -3,11 +3,6 @@ package handler
 import (
 	"context"
 	"fmt"
-	"github.com/google/go-github/v60/github"
-	"github.com/isometry/gh-promotion-app/internal/controllers"
-	"github.com/isometry/gh-promotion-app/internal/helpers"
-	"github.com/isometry/gh-promotion-app/internal/validation"
-	"github.com/pkg/errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,7 +10,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/go-github/v60/github"
+	"github.com/isometry/gh-promotion-app/internal/controllers"
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
+	"github.com/isometry/gh-promotion-app/internal/validation"
+	"github.com/pkg/errors"
 )
 
 var HandledEventTypes = []string{

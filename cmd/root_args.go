@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"strings"
-	"time"
 )
 
 type argType interface {
@@ -14,6 +15,11 @@ type argType interface {
 }
 
 var envMapString = map[*string]boundEnvVar[string]{
+	&runtimeMode: {
+		Name:        "mode",
+		Description: "The application runtime mode. Possible values are 'lambda' and 'service'",
+		Default:     helpers.Ptr("lambda"),
+	},
 	&githubToken: {
 		Name:        "github-token",
 		Description: "When specified, the GitHub token to use for API requests",
@@ -21,7 +27,7 @@ var envMapString = map[*string]boundEnvVar[string]{
 	},
 	&githubAuthMode: {
 		Name:        "github-auth-mode",
-		Description: "Authentication serviceMode. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' serviceMode is used as an automatic fallback.",
+		Description: "Authentication credentials provider. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' credentials provided is used as an automatic fallback.",
 		Short:       helpers.Ptr("A"),
 	},
 	&githubSSMKey: {
@@ -40,10 +46,6 @@ var envMapString = map[*string]boundEnvVar[string]{
 }
 
 var envMapBool = map[*bool]boundEnvVar[bool]{
-	&serviceMode: {
-		Name:        "service",
-		Description: "If set to true, the service will run in 'service' mode. Otherwise, it will run in 'lambda' mode by default",
-	},
 	&callerTrace: {
 		Name:        "caller-trace",
 		Description: "Enable caller trace in logs",
@@ -63,6 +65,8 @@ var envMapCount = map[*int]boundEnvVar[int]{
 	},
 }
 
+var replacer = strings.NewReplacer(".", "_", "-", "_")
+
 func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
 
 	for v, cfg := range m {
@@ -70,7 +74,7 @@ func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
 		if cfg.Env != nil {
 			desc = fmt.Sprintf("[%s] %s", *cfg.Env, desc)
 		} else {
-			desc = fmt.Sprintf("[%s] %s", strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(cfg.Name)), desc)
+			desc = fmt.Sprintf("[%s] %s", strings.ToUpper(replacer.Replace(cfg.Name)), desc)
 		}
 
 		switch any(v).(type) {
@@ -130,7 +134,7 @@ func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
 		if cfg.Env != nil {
 			_ = viper.BindEnv(cfg.Name, *cfg.Env)
 		} else {
-			_ = viper.BindEnv(cfg.Name, strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(cfg.Name)))
+			_ = viper.BindEnv(cfg.Name, strings.ToUpper(replacer.Replace(cfg.Name)))
 		}
 
 		if cfg.Hidden {
