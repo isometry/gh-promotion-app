@@ -38,6 +38,7 @@ func NewStagePromoter(stages []string) *Promoter {
 
 func NewDynamicPromoter(logger *slog.Logger, props map[string]string, promoterKey string) *Promoter {
 	stagesBlob, found := props[promoterKey]
+	stagesBlob = strings.TrimSpace(stagesBlob)
 	if !found {
 		logger.Warn("promoter key not found in properties. Defaulting to standard promoter...", slog.Any("key", promoterKey))
 		return _defaultPromoter
@@ -56,6 +57,9 @@ func NewDynamicPromoter(logger *slog.Logger, props map[string]string, promoterKe
 	if len(stages) == 0 {
 		logger.Warn("promoter key found but no stages were defined. Defaulting to standard promoter...", slog.Any("key", promoterKey))
 		return _defaultPromoter
+	}
+	for i, stage := range stages {
+		stages[i] = strings.TrimSpace(stage)
 	}
 	logger.Debug("dynamic promoter stages loaded...", slog.Any("stages", stages))
 	return NewStagePromoter(stages)
