@@ -20,9 +20,3 @@ type (
 	Request  = events.APIGatewayV2HTTPRequest
 	Response = events.APIGatewayV2HTTPResponse
 )
-
-type EventInstallationId struct {
-	Installation struct {
-		ID *int64 `json:"id"`
-	} `json:"installation"`
-}
