@@ -32,6 +32,6 @@ var svcEnvMapDuration = map[*time.Duration]boundEnvVar[time.Duration]{
 		Name:        "service-io-timeout",
 		Description: "The timeout for I/O operations",
 		Short:       helpers.Ptr("t"),
-		Default:     helpers.TimeDurationPtr(5 * time.Second),
+		Default:     helpers.Ptr(5 * time.Second),
 	},
 }
