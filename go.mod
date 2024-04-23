@@ -4,11 +4,11 @@ go 1.22
 
 require (
 	github.com/aws/aws-lambda-go v1.46.0
-	github.com/aws/aws-sdk-go-v2 v1.26.0
+	github.com/aws/aws-sdk-go-v2 v1.26.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.8
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.53.0
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.49.4
-	github.com/aws/smithy-go v1.20.1
+	github.com/aws/smithy-go v1.20.2
 	github.com/bradleyfalzon/ghinstallation/v2 v2.9.0
 	github.com/google/go-github/v60 v60.0.0
 	github.com/pkg/errors v0.9.1
