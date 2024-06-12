@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v62/github"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/stretchr/testify/assert"
 )

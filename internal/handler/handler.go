@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v62/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
@@ -157,9 +157,8 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		if nextStage, isPromotable := pCtx.Promoter.IsPromotableRef(*e.Ref); isPromotable {
 			pCtx.BaseRef = helpers.NormaliseFullRefPtr(nextStage)
 		} else {
-			msg := "ignoring push event on non-promotion branch"
-			logger.Info(msg)
-			return helpers.Response{Body: strings.ToLower(msg), StatusCode: http.StatusUnprocessableEntity}, nil
+			logger.Info("ignoring push event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
+			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		var pr *github.PullRequest
@@ -204,10 +203,10 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
-		logger.Info("parsed pull req event")
+		logger.Info("parsed pull request event")
 
 	case *github.PullRequestReviewEvent:
-		logger.Debug("processing pull req review event...")
+		logger.Debug("processing pull request review event...")
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
@@ -341,11 +340,19 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 	// ignore events without an open promotion req
 	if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
-		// find matching promotion req by head SHA and populate missing refs
+		// find matching promotion request by head SHA and populate missing refs
 		if _, err = h.githubController.FindPullRequest(pCtx); err != nil {
 			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
 			return helpers.Response{StatusCode: http.StatusInternalServerError}, nil
 		}
+	}
+
+	// ignore events with refs that are not promotable
+	_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
+	if !isPromotable {
+		logger.Info("ignoring event on a non-promotion branch",
+			slog.String("headRef", *pCtx.HeadRef), slog.String("eventType", eventType))
+		return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
 	if err = h.githubController.FastForwardRefToSha(pCtx); err != nil {
