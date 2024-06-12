@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v62/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
@@ -183,7 +183,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		}, nil
 
 	case *github.PullRequestEvent:
-		logger.Debug("processing pull req event...")
+		logger.Debug("processing pull request event...")
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
@@ -203,16 +203,10 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
 
-		_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
-		if !isPromotable {
-			logger.Info("ignoring pull request event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
-		}
-
-		logger.Info("parsed pull req event")
+		logger.Info("parsed pull request event")
 
 	case *github.PullRequestReviewEvent:
-		logger.Debug("processing pull req review event...")
+		logger.Debug("processing pull request review event...")
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
@@ -228,12 +222,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.BaseRef = helpers.NormaliseRefPtr(*e.PullRequest.Base.Ref)
 		pCtx.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
-
-		_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
-		if !isPromotable {
-			logger.Info("ignoring pull request review event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
-		}
 
 		logger.Info("parsed pull request review event")
 
@@ -266,12 +254,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
-		if !isPromotable {
-			logger.Info("ignoring deployment status event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
-		}
-
 		logger.Info("Parsed check suite event")
 
 	case *github.DeploymentStatusEvent:
@@ -292,12 +274,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.HeadRef = helpers.NormaliseFullRefPtr(*e.Deployment.Ref)
 		pCtx.HeadSHA = e.Deployment.SHA
 
-		_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
-		if !isPromotable {
-			logger.Info("ignoring deployment status event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
-		}
-
 		logger.Info("parsed deployment status event")
 
 	case *github.StatusEvent:
@@ -316,12 +292,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		pCtx.Owner = e.Repo.Owner.Login
 		pCtx.Repository = e.Repo.Name
 		pCtx.HeadSHA = e.SHA
-
-		_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
-		if !isPromotable {
-			logger.Info("ignoring status event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
-		}
 
 		logger.Info("parsed status event")
 
@@ -361,12 +331,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
-		if !isPromotable {
-			logger.Info("ignoring workflow run on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
-		}
-
 		logger.Info("parsed workflow run event")
 
 	default:
@@ -376,11 +340,19 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 	// ignore events without an open promotion req
 	if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
-		// find matching promotion req by head SHA and populate missing refs
+		// find matching promotion request by head SHA and populate missing refs
 		if _, err = h.githubController.FindPullRequest(pCtx); err != nil {
 			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
 			return helpers.Response{StatusCode: http.StatusInternalServerError}, nil
 		}
+	}
+
+	// ignore events with refs that are not promotable
+	_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
+	if !isPromotable {
+		logger.Info("ignoring event on a non-promotion branch",
+			slog.String("headRef", *pCtx.HeadRef), slog.String("eventType", eventType))
+		return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
 	if err = h.githubController.FastForwardRefToSha(pCtx); err != nil {
