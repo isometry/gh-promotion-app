@@ -27,8 +27,9 @@ var envMapString = map[*string]boundEnvVar[string]{
 	},
 	&githubAuthMode: {
 		Name:        "github-auth-mode",
-		Description: "Authentication credentials provider. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' credentials provided is used as an automatic fallback.",
+		Description: "Authentication credentials provider. Supported values are 'token' and 'ssm'.",
 		Short:       helpers.Ptr("A"),
+		Default:     helpers.Ptr("ssm"),
 	},
 	&githubSSMKey: {
 		Name:        "github-app-ssm-arn",

@@ -3,7 +3,9 @@ package promotion
 import (
 	"log/slog"
 
+	"github.com/google/go-github/v62/github"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/shurcooL/githubv4"
 )
 
 type Context struct {
@@ -15,6 +17,9 @@ type Context struct {
 	HeadRef    *string
 	HeadSHA    *string
 	Promoter   *Promoter
+
+	ClientV3 *github.Client
+	ClientV4 *githubv4.Client
 }
 
 func (p *Context) LogValue() slog.Value {

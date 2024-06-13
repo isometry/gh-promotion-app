@@ -4,11 +4,10 @@
 <p align="center" width="100%">
     <img src="https://github.com/isometry/gh-promotion-app/blob/main/docs/images/banner.png?raw=true" width="220"></img>
     <br>
-    <i>gitops.kyverno-policies</i>
+    <i>gh-promotion-app</i>
     <br>
     🔎 <a href="#how-it-works">How it works</a> | 👍 <a href="#contributing">Contributing</a>
     <br><br>
-    🪄 <a href="https://github.com/isometry/gh-promotion-app">gh-promotion-app</a>
 </p>
 
 ## How it works

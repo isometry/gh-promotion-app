@@ -108,18 +108,21 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		return *resp, err
 	}
 
-	// @TODO -> Handle fetching from SSM if empty
-	h.logger.Debug("validating request body...")
+	// Refresh credentials if needed
+	if err = h.githubController.RetrieveCredentials(); err != nil {
+		logger.Warn("failed to refresh credentials", slog.Any("error", err))
+		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
+	}
 	if err = h.githubController.ValidateWebhookSecret(body, headers); err != nil {
 		logger.Warn("validating signature", slog.Any("error", err))
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
 	}
 	logger.Debug("request body is valid")
 
-	// Refresh credentials if needed
-	h.logger.Debug("refreshing credentials...")
-	h.logger.Debug("Controller", slog.Any("controller", h.githubController.Token))
-	if err = h.githubController.Authenticate(body); err != nil {
+	// GetGitHubClients the request
+	logger.Debug("authenticating...")
+	var clients *controllers.Client
+	if clients, err = h.githubController.GetGitHubClients(body); err != nil {
 		h.logger.Warn("failed to authenticate", slog.Any("error", err))
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
@@ -137,6 +140,8 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	pCtx := &promotion.Context{
 		EventType: &eventType,
 		Logger:    h.logger.With("routine", "promotion.Context"),
+		ClientV3:  clients.V3,
+		ClientV4:  clients.V4,
 	}
 
 	logger = logger.With(slog.Any("context", pCtx))
