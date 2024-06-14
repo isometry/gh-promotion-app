@@ -26,6 +26,12 @@ func WithAuthMode(authMode string) Option {
 	}
 }
 
+func WithLambdaPayloadType(payloadType string) Option {
+	return func(h *Handler) {
+		h.lambdaPayloadType = payloadType
+	}
+}
+
 func WithSSMKey(key string) Option {
 	return func(h *Handler) {
 		h.ssmKey = key

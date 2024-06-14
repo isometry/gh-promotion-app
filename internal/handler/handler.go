@@ -42,6 +42,7 @@ type Handler struct {
 	ghToken            string
 	webhookSecret      *validation.WebhookSecret
 	dynamicPromoterKey string
+	lambdaPayloadType  string
 }
 
 func NewPromotionHandler(options ...Option) (*Handler, error) {
@@ -365,4 +366,8 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	}
 	logger.Info("fast forward complete")
 	return helpers.Response{Body: "Promotion complete", StatusCode: http.StatusNoContent}, nil
+}
+
+func (h *Handler) GetLambdaPayloadType() string {
+	return h.lambdaPayloadType
 }

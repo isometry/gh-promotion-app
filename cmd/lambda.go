@@ -11,6 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	lambdaPayloadType string
+)
+
 var lambdaCmd = &cobra.Command{
 	Use:     "lambda",
 	Aliases: []string{"l", "serverless"},
@@ -31,6 +35,7 @@ var lambdaCmd = &cobra.Command{
 		}
 		logger.Debug("creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
+			handler.WithLambdaPayloadType(lambdaPayloadType),
 			handler.WithAuthMode(githubAuthMode),
 			handler.WithSSMKey(githubSSMKey),
 			handler.WithToken(githubToken),
