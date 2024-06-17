@@ -71,7 +71,6 @@ type Credentials struct {
 }
 
 func (g *GitHub) RetrieveCredentials() error {
-	g.logger.Debug("retrieving credentials...", slog.String("authMode", g.authMode))
 	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
 	case "token":
 		if g.Token == "" {
@@ -79,6 +78,10 @@ func (g *GitHub) RetrieveCredentials() error {
 		}
 		return nil
 	case "ssm":
+		if g.WebhookSecret != nil && g.AppId != 0 && g.PrivateKey != "" {
+			g.logger.Debug("using cached GitHub App credentials...")
+			return nil
+		}
 		g.logger.Debug("retrieving credentials from SSM...")
 		secret, err := g.awsController.GetSecret(g.ssmKey, true)
 		if err != nil {
@@ -114,8 +117,8 @@ func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
 		clientV3 *github.Client
 		clientV4 *githubv4.Client
 	)
-	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
-	case "token":
+	switch {
+	case g.Token != "":
 		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
 		roundTripper := &loggingRoundTripper{logger: g.logger}
 		clientV3 = github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
@@ -124,7 +127,7 @@ func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
 		)
 		httpClient := oauth2.NewClient(g.ctx, src)
 		clientV4 = githubv4.NewClient(httpClient)
-	case "ssm":
+	case g.PrivateKey != "" && g.AppId != 0 && installationId != nil:
 		g.logger.Debug("Spawning credentials using GitHub App credentials from SSM...")
 		roundTripper := &loggingRoundTripper{logger: g.logger}
 		transport, err := ghinstallation.New(roundTripper, g.AppId, *installationId, []byte(g.PrivateKey))
@@ -135,6 +138,8 @@ func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
 		authTransport := &http.Client{Transport: transport}
 		clientV3 = github.NewClient(authTransport)
 		clientV4 = githubv4.NewClient(authTransport)
+	default:
+		return nil, fmt.Errorf("no valid credentials found")
 	}
 	// Persist cache entry
 	_clientCache[*installationId] = &Client{

@@ -22,7 +22,7 @@ var envMapString = map[*string]boundEnvVar[string]{
 	},
 	&lambdaPayloadType: {
 		Name:        "lambda-payload-type",
-		Description: "The payload type to expect when running in Lambda mode. Possible values are 'api-gateway-v1', 'api-gateway-v2' and 'lambda-url'",
+		Description: "The payload type to expect when running in Lambda mode. Supported values are 'api-gateway-v1', 'api-gateway-v2' and 'lambda-url'",
 		Default:     helpers.Ptr("api-gateway-v2"),
 		Env:         helpers.Ptr("LAMBDA_PAYLOAD_TYPE"),
 	},
