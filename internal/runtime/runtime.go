@@ -1,11 +1,13 @@
 package runtime
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 )
@@ -34,15 +36,37 @@ func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 	return _inst
 }
 
-func (r *Runtime) HandleEvent(req helpers.Request) (response helpers.Response, err error) {
-	r.logger.Info("received API Gateway V2 request")
+func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
+	r.logger.Info("received API Gateway request")
 
-	hResponse, err := r.Handler.Process([]byte(req.Body), req.Headers)
+	// Lower-case incoming headers for compatibility purposes
+	lch := make(map[string]string)
+	for k, v := range req.Headers {
+		lch[k] = strings.ToLower(v)
+	}
+
+	hResponse, err := r.Handler.Process([]byte(req.Body), lch)
 	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
-	return helpers.Response{
-		Body:       hResponse.Body,
-		StatusCode: hResponse.StatusCode,
-	}, err
+
+	switch r.Handler.GetLambdaPayloadType() {
+	case "api-gateway-v1":
+		return events.APIGatewayProxyResponse{
+			Body:       hResponse.Body,
+			StatusCode: hResponse.StatusCode,
+		}, err
+	case "api-gateway-v2":
+		return events.APIGatewayV2HTTPResponse{
+			Body:       hResponse.Body,
+			StatusCode: hResponse.StatusCode,
+		}, err
+	case "lambda-url":
+		return events.LambdaFunctionURLResponse{
+			Body:       hResponse.Body,
+			StatusCode: hResponse.StatusCode,
+		}, err
+	default:
+		return nil, fmt.Errorf("unsupported lambda payload type: %s", r.Handler.GetLambdaPayloadType())
+	}
 }
 
 func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {

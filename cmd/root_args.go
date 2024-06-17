@@ -20,6 +20,12 @@ var envMapString = map[*string]boundEnvVar[string]{
 		Description: "The application runtime mode. Possible values are 'lambda' and 'service'",
 		Default:     helpers.Ptr("lambda"),
 	},
+	&lambdaPayloadType: {
+		Name:        "lambda-payload-type",
+		Description: "The payload type to expect when running in Lambda mode. Supported values are 'api-gateway-v1', 'api-gateway-v2' and 'lambda-url'",
+		Default:     helpers.Ptr("api-gateway-v2"),
+		Env:         helpers.Ptr("LAMBDA_PAYLOAD_TYPE"),
+	},
 	&githubToken: {
 		Name:        "github-token",
 		Description: "When specified, the GitHub token to use for API requests",
@@ -27,8 +33,9 @@ var envMapString = map[*string]boundEnvVar[string]{
 	},
 	&githubAuthMode: {
 		Name:        "github-auth-mode",
-		Description: "Authentication credentials provider. Supported values are 'token' and 'ssm'. If token is specified, and the GITHUB_TOKEN environment variable is not set, the 'ssm' credentials provided is used as an automatic fallback.",
+		Description: "Authentication credentials provider. Supported values are 'token' and 'ssm'.",
 		Short:       helpers.Ptr("A"),
+		Default:     helpers.Ptr("ssm"),
 	},
 	&githubSSMKey: {
 		Name:        "github-app-ssm-arn",

@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v62/github"
@@ -44,6 +43,16 @@ func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 	return _inst, nil
 }
 
+// Client - cache struct holding an entry for each installation ID
+type Client struct {
+	installationId int64
+	V3             *github.Client
+	V4             *githubv4.Client
+}
+
+// _clientCache - cache of GitHub clients
+var _clientCache map[int64]*Client = make(map[int64]*Client)
+
 type GitHub struct {
 	Credentials
 
@@ -51,11 +60,7 @@ type GitHub struct {
 	ssmKey        string
 	ctx           context.Context
 	logger        *slog.Logger
-	clientV3      *github.Client
-	clientV4      *githubv4.Client
 	awsController *AWS
-
-	tokenTTL time.Time
 }
 
 type Credentials struct {
@@ -65,72 +70,85 @@ type Credentials struct {
 	Token         string                    `json:"token,omitempty"`
 }
 
-// @TODO -> Separate into two functions initialise (Authorize) && authenticate (GetClients)
-
-func (g *GitHub) Authenticate(body []byte) error {
-	roundTripper := &loggingRoundTripper{logger: g.logger}
-	g.logger.Debug("initialising clients...", slog.String("authMode", g.authMode))
+func (g *GitHub) RetrieveCredentials() error {
 	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
 	case "token":
-		if g.clientV3 != nil && g.clientV4 != nil {
-			g.logger.Debug("clients already initialised. Skipping...")
-			return nil
-		}
-
 		if g.Token == "" {
-			g.logger.Debug("[GITHUB_TOKEN] not found. Falling back to SSM...")
-			g.authMode = "ssm"
-			return g.Authenticate(body)
+			return fmt.Errorf("missing [GITHUB_TOKEN]]")
 		}
-
-		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
-		g.clientV3 = github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
-		src := oauth2.StaticTokenSource(
-			&oauth2.Token{AccessToken: g.Token},
-		)
-		httpClient := oauth2.NewClient(g.ctx, src)
-		g.clientV4 = githubv4.NewClient(httpClient)
-		g.logger.Debug("successfully spawned clients using PAT...")
 		return nil
-	case "ssm", "":
-		g.logger.Debug("fetching credentials using GitHub App credentials from SSM...")
-		if !g.tokenTTL.After(time.Now()) && g.clientV3 != nil && g.clientV4 != nil {
-			g.logger.Debug("existing valid token found. Skipping...")
+	case "ssm":
+		if g.WebhookSecret != nil && g.AppId != 0 && g.PrivateKey != "" {
+			g.logger.Debug("using cached GitHub App credentials...")
 			return nil
 		}
-
-		g.logger.Debug("spawning clients using GitHub application credentials from SSM...")
+		g.logger.Debug("retrieving credentials from SSM...")
 		secret, err := g.awsController.GetSecret(g.ssmKey, true)
 		if err != nil {
-			return errors.Wrap(err, "failed to fetch GitHub App credentials from SSM")
+			return errors.Wrap(err, "failed to fetch credentials from SSM")
 		}
 		if err = json.Unmarshal([]byte(*secret), &g.Credentials); err != nil {
-			return errors.Wrap(err, "failed to unmarshal GitHub App credentials")
+			return errors.Wrap(err, "failed to unmarshal credentials")
 		}
-		var eventInstallationId EventInstallationId
-		if err = json.Unmarshal(body, &eventInstallationId); err != nil {
-			return fmt.Errorf("no installation ID found. error: %v", err)
-		}
-
-		installationId := eventInstallationId.Installation.ID
-		g.logger.Debug("using installation ID from event...", slog.Int64("installationId", *installationId))
-		transport, err := ghinstallation.New(roundTripper, g.AppId, *installationId, []byte(g.PrivateKey))
-		if err != nil {
-			return errors.Wrap(err, "failed to create installation transport")
-		}
-
-		authTransport := &http.Client{Transport: transport}
-		g.clientV3 = github.NewClient(authTransport)
-		g.clientV4 = githubv4.NewClient(authTransport)
-		// set token TTL to 30 seconds before expiry to allow for some leeway
-		g.tokenTTL = time.Now().Add(30 * time.Second)
 	case "vault":
 		panic("vault auth mode not implemented")
 	default:
 		return fmt.Errorf("unsupported auth mode: %s", g.authMode)
 	}
-
 	return nil
+}
+
+func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
+	var eventInstallationId EventInstallationId
+	if err := json.Unmarshal(body, &eventInstallationId); err != nil {
+		return nil, fmt.Errorf("no installation ID found. error: %v", err)
+	}
+
+	// Cache hit
+	installationId := eventInstallationId.Installation.ID
+	if client, ok := _clientCache[*installationId]; ok {
+		g.logger.Debug("cache hit. using cached client...", slog.Int64("installationId", *installationId))
+		return client, nil
+	}
+
+	// Cache miss
+	g.logger.Debug("cache miss. spawning clients...", slog.Int64("installationId", *installationId))
+	var (
+		clientV3 *github.Client
+		clientV4 *githubv4.Client
+	)
+	switch {
+	case g.Token != "":
+		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
+		roundTripper := &loggingRoundTripper{logger: g.logger}
+		clientV3 = github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
+		src := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: g.Token},
+		)
+		httpClient := oauth2.NewClient(g.ctx, src)
+		clientV4 = githubv4.NewClient(httpClient)
+	case g.PrivateKey != "" && g.AppId != 0 && installationId != nil:
+		g.logger.Debug("Spawning credentials using GitHub App credentials from SSM...")
+		roundTripper := &loggingRoundTripper{logger: g.logger}
+		transport, err := ghinstallation.New(roundTripper, g.AppId, *installationId, []byte(g.PrivateKey))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create installation transport")
+		}
+
+		authTransport := &http.Client{Transport: transport}
+		clientV3 = github.NewClient(authTransport)
+		clientV4 = githubv4.NewClient(authTransport)
+	default:
+		return nil, fmt.Errorf("no valid credentials found")
+	}
+	// Persist cache entry
+	_clientCache[*installationId] = &Client{
+		installationId: *installationId,
+		V3:             clientV3,
+		V4:             clientV4,
+	}
+	g.logger.Debug("successfully cached spawned clients...", slog.Int64("installationId", *installationId))
+	return _clientCache[*installationId], nil
 }
 
 func (g *GitHub) ValidateWebhookSecret(secret []byte, headers map[string]string) error {
@@ -156,7 +174,7 @@ func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, 
 		prListOptions.Base = *pCtx.BaseRef
 	}
 
-	prs, _, err := g.clientV3.PullRequests.List(g.ctx, *pCtx.Owner, *pCtx.Repository, prListOptions)
+	prs, _, err := pCtx.ClientV3.PullRequests.List(g.ctx, *pCtx.Owner, *pCtx.Repository, prListOptions)
 	if err != nil {
 		g.logger.Error("failed to list pull requests...", slog.Any("error", err))
 		return nil, err
@@ -175,7 +193,7 @@ func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, 
 }
 
 func (g *GitHub) CreatePullRequest(pCtx *promotion.Context) (*github.PullRequest, error) {
-	pr, _, err := g.clientV3.PullRequests.Create(g.ctx, *pCtx.Owner, *pCtx.Repository, &github.NewPullRequest{
+	pr, _, err := pCtx.ClientV3.PullRequests.Create(g.ctx, *pCtx.Owner, *pCtx.Repository, &github.NewPullRequest{
 		Title:               g.RequestTitle(*pCtx),
 		Head:                pCtx.HeadRef,
 		Base:                pCtx.BaseRef,
@@ -199,7 +217,7 @@ func (g *GitHub) FastForwardRefToSha(pCtx *promotion.Context) error {
 			SHA: pCtx.HeadSHA,
 		},
 	}
-	_, _, err := g.clientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, false)
+	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, false)
 	if err != nil {
 		ctxLogger.Error("failed fast forward", slog.Any("error", err))
 		return err
@@ -213,7 +231,7 @@ type CommitOnBranchRequest struct {
 	Owner, Repository, Branch, Message string
 }
 
-func (g *GitHub) EmptyCommitOnBranch(ctx context.Context, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
+func (g *GitHub) EmptyCommitOnBranch(clients *Client, ctx context.Context, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
 	// Fetch the current head commit of the branch
 	var query struct {
 		Repository struct {
@@ -232,7 +250,7 @@ func (g *GitHub) EmptyCommitOnBranch(ctx context.Context, createCommitOnBranchIn
 		"qualifiedName": *createCommitOnBranchInput.Branch.BranchName,
 	}
 
-	if err := g.clientV4.Query(ctx, &query, variables); err != nil {
+	if err := clients.V4.Query(ctx, &query, variables); err != nil {
 		return "", errors.Wrap(err, "GetBranchHeadCommit: failed to fetch the current head commit of the branch")
 	}
 
@@ -246,7 +264,7 @@ func (g *GitHub) EmptyCommitOnBranch(ctx context.Context, createCommitOnBranchIn
 		} `graphql:"createCommitOnBranch(input: $input)"`
 	}
 
-	if err := g.clientV4.Mutate(ctx, &mutation, createCommitOnBranchInput, nil); err != nil {
+	if err := clients.V4.Mutate(ctx, &mutation, createCommitOnBranchInput, nil); err != nil {
 		return "", errors.Wrap(err, "failed to create commit on branch")
 	}
 	return string(mutation.CreateCommitOnBranch.Commit.Oid), nil
@@ -257,10 +275,11 @@ func GitHubEmptyCommitOnBranchWithDefaultClient(ctx context.Context, req githubv
 	if err != nil {
 		return "", err
 	}
-	if err = ctl.Authenticate(nil); err != nil {
+	var clients *Client
+	if clients, err = ctl.GetGitHubClients(nil); err != nil {
 		return "", err
 	}
-	return ctl.EmptyCommitOnBranch(ctx, req)
+	return ctl.EmptyCommitOnBranch(clients, ctx, req)
 }
 
 func (g *GitHub) RequestTitle(pCtx promotion.Context) *string {
