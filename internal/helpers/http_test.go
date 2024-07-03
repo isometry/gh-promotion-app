@@ -12,7 +12,7 @@ import (
 
 type testCase struct {
 	Name     string
-	Response helpers.Response_
+	Response helpers.Response
 	Error    error
 	Expected expectedResponse
 }
@@ -27,7 +27,7 @@ func TestNewHttpResponse(t *testing.T) {
 	testCases := []testCase{
 		{
 			Name: "with_valid_response_and_no_error",
-			Response: helpers.Response_{
+			Response: helpers.Response{
 				StatusCode: http.StatusOK,
 				Body:       "Success",
 				Headers:    map[string]string{"Content-Type": "application/json"},
@@ -40,7 +40,7 @@ func TestNewHttpResponse(t *testing.T) {
 		},
 		{
 			Name: "with_valid_response_and_error",
-			Response: helpers.Response_{
+			Response: helpers.Response{
 				StatusCode: http.StatusInternalServerError,
 				Body:       "Failure",
 				Headers:    map[string]string{"Content-Type": "application/json"},
@@ -54,7 +54,7 @@ func TestNewHttpResponse(t *testing.T) {
 		},
 		{
 			Name:     "with_empty_response_and_no_error",
-			Response: helpers.Response_{},
+			Response: helpers.Response{},
 			Expected: expectedResponse{
 				StatusCode: http.StatusOK,
 				Body:       "",
@@ -63,7 +63,7 @@ func TestNewHttpResponse(t *testing.T) {
 		},
 		{
 			Name:     "with_empty_response_and_error",
-			Response: helpers.Response_{},
+			Response: helpers.Response{},
 			Error:    errors.New("internal Server Error"),
 			Expected: expectedResponse{
 				StatusCode: http.StatusOK,
