@@ -16,8 +16,8 @@ func Execute() error {
 }
 
 var (
-	dynamicPromoterKey string
-	dynamicPromoter    bool
+	dynamicPromotionKey string
+	dynamicPromoter     bool
 
 	runtimeMode    string
 	githubAuthMode string

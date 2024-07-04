@@ -56,8 +56,8 @@ func WithPromoter(promoter *promotion.Promoter) Option {
 	}
 }
 
-func WithDynamicPromoterKey(key string) Option {
+func WithDynamicPromotionKey(key string) Option {
 	return func(h *Handler) {
-		h.dynamicPromoterKey = key
+		h.dynamicPromotionKey = key
 	}
 }

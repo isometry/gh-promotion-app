@@ -32,17 +32,17 @@ var HandledEventTypes = []string{
 type Option func(*Handler)
 
 type Handler struct {
-	ctx                context.Context
-	logger             *slog.Logger
-	promoter           *promotion.Promoter
-	githubController   *controllers.GitHub
-	awsController      *controllers.AWS
-	authMode           string
-	ssmKey             string
-	ghToken            string
-	webhookSecret      *validation.WebhookSecret
-	dynamicPromoterKey string
-	lambdaPayloadType  string
+	ctx                 context.Context
+	logger              *slog.Logger
+	promoter            *promotion.Promoter
+	githubController    *controllers.GitHub
+	awsController       *controllers.AWS
+	authMode            string
+	ssmKey              string
+	ghToken             string
+	webhookSecret       *validation.WebhookSecret
+	dynamicPromotionKey string
+	lambdaPayloadType   string
 }
 
 func NewPromotionHandler(options ...Option) (*Handler, error) {
@@ -58,7 +58,6 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 	}
 
 	if _inst.promoter == nil {
-		// @TODO(Paulo): Extract from request dynamically in the future
 		_inst.promoter = promotion.NewDefaultPromoter()
 	}
 
@@ -77,7 +76,7 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 		controllers.WithAWSController(awsCtl),
 		controllers.WithWebhookSecret(_inst.webhookSecret))
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create GitHub githubController")
+		return nil, errors.Wrap(err, "failed to create the GitHubController instance")
 	}
 	_inst.awsController = awsCtl
 	_inst.githubController = authenticator
@@ -152,7 +151,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
 		}
 
 		pCtx.Owner = e.Repo.Owner.Login
@@ -193,7 +192,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
 		}
 		switch *e.Action {
 		case "opened", "edited", "ready_for_review", "reopened", "unlocked":
@@ -216,7 +215,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
 		}
 		if *e.Review.State != "approved" {
 			logger.Info("ignoring non-approved pull request review event with unprocessable review state...", slog.String("state", *e.Review.State))
@@ -236,7 +235,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
 		}
 		if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
 			logger.Info("ignoring incomplete check suite event with unprocessable check-suite status...", slog.String("status", *e.CheckSuite.Status))
@@ -267,7 +266,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
 		}
 		state := *e.DeploymentStatus.State
 		if state != "success" {
@@ -287,7 +286,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
 		}
 		state := *e.State
 		if state != "success" {
@@ -306,7 +305,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Debug("assigning promoter...")
 		pCtx.Promoter = h.promoter
 		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromoterKey)
+			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
 		}
 		status := *e.WorkflowRun.Status
 		if status != "completed" {
