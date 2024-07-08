@@ -45,9 +45,10 @@ var envMapString = map[*string]boundEnvVar[string]{
 		Name:        "github-webhook-secret",
 		Description: "The secret to use when validating incoming GitHub webhook payloads. If not specified, no validation is performed",
 	},
-	&dynamicPromoterKey: {
-		Name:        "promotion-custom-attribute",
+	&dynamicPromotionKey: {
+		Name:        "promotion-dynamic-custom-property-key",
 		Description: "The key to use when fetching the dynamic promoter configuration",
+		Env:         helpers.Ptr("DYNAMIC_PROMOTION_KEY"),
 		Default:     helpers.Ptr("gitops-promotion-path"),
 	},
 }
@@ -58,9 +59,10 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Description: "Enable caller trace in logs",
 		Short:       helpers.Ptr("V"),
 	},
-	&dynamicPromoter: {
+	&dynamicPromotion: {
 		Name:        "promotion-dynamic",
 		Description: "Enable dynamic promotion",
+		Env:         helpers.Ptr("DYNAMIC_PROMOTION"),
 	},
 }
 
