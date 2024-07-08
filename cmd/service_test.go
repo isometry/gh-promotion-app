@@ -15,7 +15,6 @@ import (
 	"github.com/google/go-github/v62/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers"
 	"github.com/isometry/gh-promotion-app/internal/handler"
-	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/pkg/errors"
 	"github.com/shurcooL/githubv4"
@@ -159,7 +158,6 @@ func setupRuntime(t *testing.T, tc testCase, level slog.Leveler) *runtime.Runtim
 		handler.WithToken(os.Getenv("GITHUB_TOKEN")),
 		handler.WithContext(context.Background()),
 		handler.WithAuthMode("token"),
-		handler.WithPromoter(promotion.NewStagePromoter(testPromoterStages)),
 		handler.WithLogger(testLogger.With("component", "promotion-handler")))
 	if err != nil {
 		t.Fatalf("failed to create promotion handler: %v", err)
