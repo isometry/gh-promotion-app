@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
 )
 
@@ -50,9 +49,9 @@ func WithWebhookSecret(secret string) Option {
 	}
 }
 
-func WithPromoter(promoter *promotion.Promoter) Option {
+func WithDynamicPromotion(val bool) Option {
 	return func(h *Handler) {
-		h.promoter = promoter
+		h.dynamicPromotion = val
 	}
 }
 

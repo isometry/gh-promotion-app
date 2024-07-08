@@ -59,7 +59,7 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Description: "Enable caller trace in logs",
 		Short:       helpers.Ptr("V"),
 	},
-	&dynamicPromoter: {
+	&dynamicPromotion: {
 		Name:        "promotion-dynamic",
 		Description: "Enable dynamic promotion",
 		Env:         helpers.Ptr("DYNAMIC_PROMOTION"),

@@ -5,7 +5,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/isometry/gh-promotion-app/internal/handler"
-	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -26,13 +25,6 @@ var lambdaCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var promoter *promotion.Promoter
-		if !dynamicPromoter {
-			logger.Info("default promoter activated...")
-			promoter = promotion.NewDefaultPromoter()
-		} else {
-			logger.Info("dynamic promoter activated...")
-		}
 		logger.Debug("creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithLambdaPayloadType(lambdaPayloadType),
@@ -40,7 +32,7 @@ var lambdaCmd = &cobra.Command{
 			handler.WithSSMKey(githubSSMKey),
 			handler.WithToken(githubToken),
 			handler.WithWebhookSecret(webhookSecret),
-			handler.WithPromoter(promoter),
+			handler.WithDynamicPromotion(dynamicPromotion),
 			handler.WithDynamicPromotionKey(dynamicPromotionKey),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
