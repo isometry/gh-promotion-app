@@ -60,3 +60,9 @@ func WithDynamicPromotionKey(key string) Option {
 		h.dynamicPromotionKey = key
 	}
 }
+
+func WithCreateMissingTargetBranches(val bool) Option {
+	return func(h *Handler) {
+		h.createMissingTargetBranches = val
+	}
+}
