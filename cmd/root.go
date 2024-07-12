@@ -16,9 +16,9 @@ func Execute() error {
 }
 
 var (
-	dynamicPromotion            bool
-	dynamicPromotionKey         string
-	createMissingTargetBranches bool
+	dynamicPromotion    bool
+	dynamicPromotionKey string
+	createTargetRef     bool
 
 	runtimeMode    string
 	githubAuthMode string

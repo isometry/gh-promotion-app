@@ -33,18 +33,18 @@ var HandledEventTypes = []string{
 type Option func(*Handler)
 
 type Handler struct {
-	ctx                         context.Context
-	logger                      *slog.Logger
-	githubController            *controllers.GitHub
-	awsController               *controllers.AWS
-	authMode                    string
-	ssmKey                      string
-	ghToken                     string
-	webhookSecret               *validation.WebhookSecret
-	dynamicPromotion            bool
-	dynamicPromotionKey         string
-	lambdaPayloadType           string
-	createMissingTargetBranches bool
+	ctx                 context.Context
+	logger              *slog.Logger
+	githubController    *controllers.GitHub
+	awsController       *controllers.AWS
+	authMode            string
+	ssmKey              string
+	ghToken             string
+	webhookSecret       *validation.WebhookSecret
+	dynamicPromotion    bool
+	dynamicPromotionKey string
+	lambdaPayloadType   string
+	createTargetRef     bool
 }
 
 type CommonRepository struct {
@@ -211,13 +211,8 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		}
 
 		// Create missing target ref if the feature is enabled and the target ref does not exist
-		if h.createMissingTargetBranches && !h.githubController.PromotionRefExists(pCtx) {
-			// @TODO(paulo) - e.GetCommits() is limited to 2048 commits and may not contain the root commit
-			commits := e.GetCommits()
-			rootCommit := commits[len(commits)-1]
-			logger.Debug("creating missing target branch...",
-				slog.String("sha", rootCommit.GetSHA()), slog.Any("commits", commits))
-			if _, err = h.githubController.CreatePromotionRefFromCommit(pCtx, rootCommit.GetSHA()); err != nil {
+		if h.createTargetRef && !h.githubController.PromotionTargetRefExists(pCtx) {
+			if _, err = h.githubController.CreatePromotionTargetRef(pCtx); err != nil {
 				return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 			}
 		}

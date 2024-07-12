@@ -2,12 +2,14 @@ package controllers
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
@@ -158,22 +160,56 @@ func (g *GitHub) ValidateWebhookSecret(secret []byte, headers map[string]string)
 	return g.WebhookSecret.ValidateSignature(secret, headers)
 }
 
-// PromotionRefExists checks if a ref exists in the repository
-func (g *GitHub) PromotionRefExists(ctx *promotion.Context) bool {
+// PromotionTargetRefExists checks if a ref exists in the repository
+func (g *GitHub) PromotionTargetRefExists(ctx *promotion.Context) bool {
 	_, _, err := ctx.ClientV3.Git.GetRef(g.ctx, *ctx.Owner, *ctx.Repository, helpers.NormaliseFullRef(ctx.BaseRef))
 	return err == nil
 }
 
-// CreatePromotionRefFromCommit creates a new ref in the repository
-func (g *GitHub) CreatePromotionRefFromCommit(ctx *promotion.Context, commitSha string) (*github.Reference, error) {
+// CreatePromotionTargetRef creates a new ref in the repository
+func (g *GitHub) CreatePromotionTargetRef(pCtx *promotion.Context) (*github.Reference, error) {
+	// Fetch the first commit on the head ref
+	rootCommit, err := g.GetPromotionSourceRootRef(pCtx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to fetch root commit")
+	}
 	ref := &github.Reference{
-		Ref: helpers.NormaliseFullRefPtr(ctx.BaseRef),
+		Ref: helpers.NormaliseFullRefPtr(pCtx.BaseRef),
 		Object: &github.GitObject{
-			SHA: &commitSha,
+			SHA: rootCommit,
 		},
 	}
-	ref, _, err := ctx.ClientV3.Git.CreateRef(g.ctx, *ctx.Owner, *ctx.Repository, ref)
+	ref, _, err = pCtx.ClientV3.Git.CreateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, ref)
 	return ref, errors.Wrap(err, "failed to create ref")
+}
+
+// GetPromotionSourceRootRef fetches the root commit present on the head ref
+func (g *GitHub) GetPromotionSourceRootRef(pCtx *promotion.Context) (*string, error) {
+	var allCommits []*github.RepositoryCommit
+	opts := &github.CommitsListOptions{
+		SHA: *pCtx.HeadRef,
+		ListOptions: github.ListOptions{
+			PerPage: 100, // max allowed value
+		},
+	}
+
+	for {
+		commits, resp, err := pCtx.ClientV3.Repositories.ListCommits(context.Background(), *pCtx.Owner, *pCtx.Repository, opts)
+		if err != nil {
+			return nil, err
+		}
+		allCommits = append(allCommits, commits...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	slices.SortFunc(allCommits, func(i, j *github.RepositoryCommit) int {
+		di := i.GetCommit().Committer.GetDate()
+		dj := j.GetCommit().Committer.GetDate()
+		return cmp.Compare(di.Unix(), dj.Unix())
+	})
+	return allCommits[0].SHA, nil
 }
 
 // FindPullRequest searches for an open pull request that matches the promotion request
@@ -273,7 +309,7 @@ func (g *GitHub) EmptyCommitOnBranch(clients *Client, ctx context.Context, creat
 	}
 
 	if err := clients.V4.Query(ctx, &query, variables); err != nil {
-		return "", errors.Wrap(err, "GetBranchHeadCommit: failed to fetch the current head commit of the branch")
+		return "", errors.Wrap(err, "EmptyCommitOnBranch: failed create empty commit on branch")
 	}
 
 	createCommitOnBranchInput.ExpectedHeadOid = query.Repository.Ref.Target.Oid
