@@ -99,7 +99,7 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 	return _inst, err
 }
 
-func (h *Handler) ValidateRequest(eventType string) (*helpers.Response, error) {
+func (h *Handler) CheckEventType(eventType string) (*helpers.Response, error) {
 	if slices.Index(HandledEventTypes, eventType) == -1 {
 		return &helpers.Response{StatusCode: http.StatusBadRequest}, fmt.Errorf("unhandled event type: %s", eventType)
 	}
@@ -132,7 +132,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (pCtx *promoti
 	}
 
 	// Validate the request
-	resp, err := h.ValidateRequest(eventType)
+	resp, err := h.CheckEventType(eventType)
 	if err != nil {
 		logger.Warn("validating request", slog.Any("error", err))
 		return nil, *resp, err
