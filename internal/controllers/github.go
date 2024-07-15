@@ -53,7 +53,7 @@ type Client struct {
 }
 
 // _clientCache - cache of GitHub clients
-var _clientCache map[int64]*Client = make(map[int64]*Client)
+var _clientCache = make(map[int64]*Client)
 
 type GitHub struct {
 	Credentials
@@ -294,12 +294,32 @@ const (
 )
 
 // SendPromotionFeedbackCommitStatus sends a commit status to the head commit of the promotion request
-func (g *GitHub) SendPromotionFeedbackCommitStatus(pCtx *promotion.Context, commitStatus CommitStatus, context string, err error) error {
+func (g *GitHub) SendPromotionFeedbackCommitStatus(pCtx *promotion.Context, commitStatus CommitStatus, context string, promotionError error) error {
+	if pCtx == nil {
+		return fmt.Errorf("promotion context is nil")
+	}
+
+	contextSubstitution := map[string]string{
+		"{source}": helpers.ExtractRefFromFullRef(*pCtx.HeadRef),
+		"{target}": helpers.ExtractRefFromFullRef(*pCtx.BaseRef),
+	}
+
+	for k, v := range contextSubstitution {
+		context = strings.ReplaceAll(context, k, v)
+	}
+
 	var msg string
-	if err == nil {
+	switch commitStatus {
+	case CommitStatusSuccess:
 		msg = "✅ Promotion successful"
-	} else {
-		msg = fmt.Sprintf("❌ Promotion failed: %v", err)
+	case CommitStatusFailure:
+		msg = fmt.Sprintf("❌ Promotion failed: %v", promotionError)
+	case CommitStatusError:
+		msg = fmt.Sprintf("💥 Promotion error: %v", promotionError)
+	case CommitStatusPending:
+		msg = "⏳ Promotion in progress"
+	default:
+		return fmt.Errorf("unknown commit status: %s", commitStatus)
 	}
 
 	status, resp, err := pCtx.ClientV3.Repositories.CreateStatus(g.ctx, *pCtx.Owner, *pCtx.Repository, *pCtx.HeadSHA, &github.RepoStatus{

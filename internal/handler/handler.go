@@ -395,9 +395,6 @@ func (h *Handler) SendFeedbackCommitStatus(pCtx *promotion.Context, status contr
 		return nil
 	}
 
-	if pCtx == nil {
-		return fmt.Errorf("missing promotion context")
-	}
 	return h.githubController.SendPromotionFeedbackCommitStatus(pCtx, status, h.feedbackCommitStatusContext, err)
 }
 

@@ -58,7 +58,8 @@ func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 		r.logger.Error("failed to send feedback commit status", slog.Any("error", statusError))
 	}
 
-	switch r.Handler.GetLambdaPayloadType() {
+	payloadType := r.Handler.GetLambdaPayloadType()
+	switch payloadType {
 	case "api-gateway-v1":
 		return events.APIGatewayProxyResponse{
 			Body:       hResponse.Body,
@@ -75,7 +76,7 @@ func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 			StatusCode: hResponse.StatusCode,
 		}, err
 	default:
-		return nil, fmt.Errorf("unsupported lambda payload type: %s", r.Handler.GetLambdaPayloadType())
+		return nil, fmt.Errorf("unsupported lambda payload type: %s", payloadType)
 	}
 }
 

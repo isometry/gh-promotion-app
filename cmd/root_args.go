@@ -53,9 +53,9 @@ var envMapString = map[*string]boundEnvVar[string]{
 	},
 	&feedbackCommitStatusContext: {
 		Name:        "feedback-commit-status-context",
-		Description: "The context to use when pushing the commit status to the repository",
+		Description: "The context key to use when pushing the commit status to the repository. Supported placeholders: {source}, {target}",
 		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS_CONTEXT"),
-		Default:     helpers.Ptr("gitops.promoter.lambda"),
+		Default:     helpers.Ptr("gitops/promotion :: {source} → {target}"),
 	},
 }
 
