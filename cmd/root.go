@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -23,6 +22,8 @@ var (
 
 	feedbackCommitStatus        bool
 	feedbackCommitStatusContext string
+
+	fetchRateLimits bool
 	// />
 
 	runtimeMode    string
@@ -36,7 +37,7 @@ var (
 	callerTrace bool
 )
 
-type boundEnvVar[T string | bool | int | time.Duration] struct {
+type boundEnvVar[T argType] struct {
 	Name, Description string
 	Env, Short        *string
 	Hidden            bool

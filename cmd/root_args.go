@@ -82,6 +82,12 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS"),
 		Default:     helpers.Ptr(true),
 	},
+	&fetchRateLimits: {
+		Name:        "fetch-rate-limits",
+		Description: "Enable per-event fetching of rate limits and corresponding logs decoration",
+		Env:         helpers.Ptr("FETCH_RATE_LIMITS"),
+		Default:     helpers.Ptr(true),
+	},
 }
 
 var envMapCount = map[*int]boundEnvVar[int]{

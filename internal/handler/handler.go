@@ -33,22 +33,26 @@ var HandledEventTypes = []string{
 type Option func(*Handler)
 
 type Handler struct {
-	ctx                 context.Context
-	logger              *slog.Logger
-	githubController    *controllers.GitHub
-	awsController       *controllers.AWS
-	authMode            string
-	ssmKey              string
-	ghToken             string
-	webhookSecret       *validation.WebhookSecret
-	lambdaPayloadType   string
-	
+	ctx               context.Context
+	logger            *slog.Logger
+	githubController  *controllers.GitHub
+	awsController     *controllers.AWS
+	authMode          string
+	ssmKey            string
+	ghToken           string
+	lambdaPayloadType string
+	webhookSecret     *validation.WebhookSecret
+
+	// Extensions >
 	createTargetRef     bool
 	dynamicPromotion    bool
 	dynamicPromotionKey string
-	
+
 	feedbackCommitStatus        bool
 	feedbackCommitStatusContext string
+
+	fetchRateLimits bool
+	// />
 }
 
 type CommonRepository struct {
@@ -192,6 +196,8 @@ func (h *Handler) Process(body []byte, headers map[string]string) (pCtx *promoti
 
 	if statusErr := h.SendFeedbackCommitStatus(pCtx, controllers.CommitStatusPending, nil); statusErr != nil {
 		logger.Error("failed to send feedback commit status", slog.Any("error", statusErr))
+	} else {
+		logger.Debug("sent feedback commit status")
 	}
 
 	// If dynamic promotion is enabled use custom properties to set the promoter, else use the default promoter
@@ -221,7 +227,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (pCtx *promoti
 		// Create missing target ref if the feature is enabled and the target ref does not exist
 		if h.createTargetRef && !h.githubController.PromotionTargetRefExists(pCtx) {
 			if _, err = h.githubController.CreatePromotionTargetRef(pCtx); err != nil {
-				return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
+				return pCtx, helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 			}
 		}
 
@@ -396,6 +402,14 @@ func (h *Handler) SendFeedbackCommitStatus(pCtx *promotion.Context, status contr
 	}
 
 	return h.githubController.SendPromotionFeedbackCommitStatus(pCtx, status, h.feedbackCommitStatusContext, err)
+}
+
+func (h *Handler) RateLimits(pCtx *promotion.Context) (*github.RateLimits, error) {
+	if !h.fetchRateLimits {
+		h.logger.Debug("rate limits fetching disabled")
+		return nil, nil
+	}
+	return h.githubController.RateLimits(pCtx.ClientV3)
 }
 
 func (h *Handler) GetLambdaPayloadType() string {

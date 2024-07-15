@@ -37,6 +37,7 @@ var lambdaCmd = &cobra.Command{
 			handler.WithFeedbackCommitStatus(feedbackCommitStatus),
 			handler.WithFeedbackCommitStatusContext(feedbackCommitStatusContext),
 			handler.WithCreateTargetRef(createTargetRef),
+			handler.WithFetchRateLimits(fetchRateLimits),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {

@@ -11,6 +11,7 @@ import (
 	"github.com/isometry/gh-promotion-app/internal/controllers"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
 
 type Option func(*Runtime)
@@ -26,6 +27,7 @@ type Runtime struct {
 	logger *slog.Logger
 }
 
+// NewRuntime creates a new runtime instance
 func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 	_inst := &Runtime{Handler: handler}
 	for _, opt := range opts {
@@ -37,6 +39,7 @@ func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 	return _inst
 }
 
+// HandleEvent is the Lambda handler for the runtime
 func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 	r.logger.Info("received API Gateway request")
 
@@ -49,14 +52,8 @@ func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 	pCtx, hResponse, err := r.Handler.Process([]byte(req.Body), lch)
 	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
 
-	// Feedback loop
-	status := controllers.CommitStatusSuccess
-	if err != nil {
-		status = controllers.CommitStatusFailure
-	}
-	if statusError := r.Handler.SendFeedbackCommitStatus(pCtx, status, err); statusError != nil {
-		r.logger.Error("failed to send feedback commit status", slog.Any("error", statusError))
-	}
+	// Extensions
+	r.extensions(pCtx, err)
 
 	payloadType := r.Handler.GetLambdaPayloadType()
 	switch payloadType {
@@ -80,6 +77,7 @@ func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 	}
 }
 
+// ServeHTTP is the HTTP handler for the runtime
 func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodPost:
@@ -116,4 +114,23 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	}
 
 	helpers.RespondHTTP(response, err, resp)
+}
+
+// extensions is a helper function to execute additional runtime extensions
+func (r *Runtime) extensions(pCtx *promotion.Context, err error) {
+	// Feedback loop: if feedbackCommitStatus is enabled, send commit status
+	status := controllers.CommitStatusSuccess
+	if err != nil {
+		status = controllers.CommitStatusFailure
+	}
+	if statusError := r.Handler.SendFeedbackCommitStatus(pCtx, status, err); statusError != nil {
+		r.logger.Error("failed to send feedback commit status", slog.Any("error", statusError))
+	}
+
+	// Rate limits: if fetchRateLimits is enabled, fetch rate limits
+	if rateLimits, err := r.Handler.RateLimits(pCtx); err != nil {
+		r.logger.Warn("failed to fetch rate limits", slog.Any("error", err))
+	} else {
+		r.logger.Info("rate limits fetched", slog.Any("rateLimits", rateLimits))
+	}
 }

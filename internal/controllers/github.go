@@ -339,6 +339,17 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(pCtx *promotion.Context, comm
 	return nil
 }
 
+// RateLimits fetches the rate limits for the currently authenticated identity
+func (g *GitHub) RateLimits(clt *github.Client) (*github.RateLimits, error) {
+	rate, _, err := clt.RateLimit.Get(g.ctx)
+	if err != nil {
+		g.logger.Error("failed to fetch rate limits", slog.Any("error", err))
+		return nil, err
+	}
+
+	return rate, nil
+}
+
 type CommitOnBranchRequest struct {
 	Owner, Repository, Branch, Message string
 }

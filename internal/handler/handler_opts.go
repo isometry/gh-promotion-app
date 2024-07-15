@@ -78,3 +78,9 @@ func WithFeedbackCommitStatusContext(context string) Option {
 		h.feedbackCommitStatusContext = context
 	}
 }
+
+func WithFetchRateLimits(val bool) Option {
+	return func(h *Handler) {
+		h.fetchRateLimits = val
+	}
+}
