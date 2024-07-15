@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -43,6 +44,19 @@ type Handler struct {
 	dynamicPromotion    bool
 	dynamicPromotionKey string
 	lambdaPayloadType   string
+}
+
+type CommonRepository struct {
+	Name     *string `json:"name,omitempty"`
+	FullName *string `json:"full_name,omitempty"`
+	Owner    *struct {
+		Login *string `json:"login,omitempty"`
+	} `json:"owner,omitempty"`
+	CustomProperties map[string]string `json:"custom_properties,omitempty"`
+}
+
+type EventRepository struct {
+	Repository CommonRepository `json:"repository"`
 }
 
 func NewPromotionHandler(options ...Option) (*Handler, error) {
@@ -87,6 +101,15 @@ func (h *Handler) ValidateRequest(eventType string) (*helpers.Response, error) {
 	return nil, nil
 }
 
+func (h *Handler) ExtractCommonRepository(body []byte) (*CommonRepository, error) {
+	var eventRepository EventRepository
+	if err := json.Unmarshal(body, &eventRepository); err != nil {
+		return nil, fmt.Errorf("event repository not found. error: %v", err)
+	}
+
+	return &eventRepository.Repository, nil
+}
+
 func (h *Handler) Process(body []byte, headers map[string]string) (response helpers.Response, err error) {
 	logger := h.logger
 	logger.Info("processing request...")
@@ -97,12 +120,21 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		return helpers.Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing event type")
 	}
 
+	deliveryId, found := headers[strings.ToLower(github.DeliveryIDHeader)]
+	if !found {
+		logger.Warn("missing delivery ID")
+		return helpers.Response{Body: "missing delivery ID", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing delivery ID")
+	}
+
 	// Validate the request
 	resp, err := h.ValidateRequest(eventType)
 	if err != nil {
 		logger.Warn("validating request", slog.Any("error", err))
 		return *resp, err
 	}
+
+	// Add the event type to the logger now that we know it's valid
+	logger = logger.With(slog.String("event", eventType))
 
 	// Refresh credentials if needed
 	if err = h.githubController.RetrieveCredentials(); err != nil {
@@ -114,6 +146,17 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		return helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
 	}
 	logger.Debug("request body is valid")
+
+	// Add the delivery ID to the logger, now that we know the payload is valid
+	logger = logger.With(slog.String("deliveryId", deliveryId))
+
+	repo, err := h.ExtractCommonRepository(body)
+	if err != nil {
+		logger.Warn("failed to extract repository context", slog.Any("error", err))
+		return helpers.Response{Body: "missing repository field", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing repository field")
+	}
+
+	logger = logger.With(slog.Any("repo", repo.FullName))
 
 	// GetGitHubClients the request
 	logger.Debug("authenticating...")
@@ -134,14 +177,19 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	}
 
 	pCtx := &promotion.Context{
-		EventType: &eventType,
-		Logger:    h.logger.With("routine", "promotion.Context"),
-		ClientV3:  clients.V3,
-		ClientV4:  clients.V4,
+		EventType:  &eventType,
+		Owner:      repo.Owner.Login,
+		Repository: repo.Name,
+		Logger:     logger.With(slog.String("routine", "promotion.Context")),
+		ClientV3:   clients.V3,
+		ClientV4:   clients.V4,
 	}
 
-	// If dynamic promotion is not enabled, use the default promoter
-	if !h.dynamicPromotion {
+	// If dynamic promotion is enabled use custom properties to set the promoter, else use the default promoter
+	if h.dynamicPromotion {
+		logger.Debug("assigning promoter...")
+		pCtx.Promoter = promotion.NewDynamicPromoter(logger, repo.CustomProperties, h.dynamicPromotionKey)
+	} else {
 		logger.Info("dynamic promotion is disabled... defaulting to standard promoter")
 		pCtx.Promoter = promotion.NewDefaultPromoter()
 	}
@@ -150,16 +198,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	switch e := event.(type) {
 	case *github.PushEvent:
 		logger.Debug("processing push_event...")
-		logger.Debug("assigning promoter...")
 
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
 		pCtx.HeadRef = e.Ref
 		pCtx.HeadSHA = e.After
-
-		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
-		}
 
 		if nextStage, isPromotable := pCtx.Promoter.IsPromotableRef(*e.Ref); isPromotable {
 			pCtx.BaseRef = helpers.NormaliseFullRefPtr(nextStage)
@@ -191,7 +232,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 	case *github.PullRequestEvent:
 		logger.Debug("processing pull request event...")
-		logger.Debug("assigning promoter...")
 
 		switch *e.Action {
 		case "opened", "edited", "ready_for_review", "reopened", "unlocked":
@@ -201,55 +241,35 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
 		pCtx.BaseRef = helpers.NormaliseRefPtr(*e.PullRequest.Base.Ref)
 		pCtx.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
-
-		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
-		}
 
 		logger.Info("parsed pull request event")
 
 	case *github.PullRequestReviewEvent:
 		logger.Debug("processing pull request review event...")
-		logger.Debug("assigning promoter...")
 
 		if *e.Review.State != "approved" {
 			logger.Info("ignoring non-approved pull request review event with unprocessable review state...", slog.String("state", *e.Review.State))
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
 		pCtx.BaseRef = helpers.NormaliseRefPtr(*e.PullRequest.Base.Ref)
 		pCtx.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 		pCtx.HeadSHA = e.PullRequest.Head.SHA
-
-		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
-		}
 
 		logger.Info("parsed pull request review event")
 
 	case *github.CheckSuiteEvent:
 		logger.Debug("processing check suite event...")
-		logger.Debug("assigning promoter...")
 
 		if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
 			logger.Info("ignoring incomplete check suite event with unprocessable check-suite status...", slog.String("status", *e.CheckSuite.Status))
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
 		pCtx.HeadSHA = e.CheckSuite.HeadSHA
-
-		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
-		}
 
 		for _, pr := range e.CheckSuite.PullRequests {
 			if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
@@ -268,7 +288,6 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 	case *github.DeploymentStatusEvent:
 		logger.Info("processing deployment status event...")
-		logger.Debug("assigning promoter...")
 
 		state := *e.DeploymentStatus.State
 		if state != "success" {
@@ -276,20 +295,13 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			return helpers.Response{StatusCode: http.StatusFailedDependency}, nil
 		}
 
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
 		pCtx.HeadRef = helpers.NormaliseFullRefPtr(*e.Deployment.Ref)
 		pCtx.HeadSHA = e.Deployment.SHA
-
-		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
-		}
 
 		logger.Info("parsed deployment status event")
 
 	case *github.StatusEvent:
 		logger.Debug("processing status event...")
-		logger.Debug("assigning promoter...")
 
 		state := *e.State
 		if state != "success" {
@@ -297,19 +309,12 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
 		pCtx.HeadSHA = e.SHA
-
-		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
-		}
 
 		logger.Info("parsed status event")
 
 	case *github.WorkflowRunEvent:
 		logger.Debug("processing workflow run event...")
-		logger.Debug("assigning promoter...")
 
 		status := *e.WorkflowRun.Status
 		if status != "completed" {
@@ -323,13 +328,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
-		pCtx.Owner = e.Repo.Owner.Login
-		pCtx.Repository = e.Repo.Name
 		pCtx.HeadSHA = e.WorkflowRun.HeadSHA
-
-		if pCtx.Promoter == nil {
-			pCtx.Promoter = promotion.NewDynamicPromoter(logger, e.Repo.CustomProperties, h.dynamicPromotionKey)
-		}
 
 		for _, pr := range e.WorkflowRun.PullRequests {
 			if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
@@ -347,7 +346,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		logger.Info("parsed workflow run event")
 
 	default:
-		logger.Warn("rejecting unprocessable event type...", slog.String("eventType", eventType))
+		logger.Warn("rejecting unprocessable event type...")
 		return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
@@ -364,7 +363,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	_, isPromotable := pCtx.Promoter.IsPromotableRef(*pCtx.HeadRef)
 	if !isPromotable {
 		logger.Info("ignoring event on a non-promotion branch",
-			slog.String("headRef", *pCtx.HeadRef), slog.String("eventType", eventType))
+			slog.String("headRef", *pCtx.HeadRef))
 		return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
