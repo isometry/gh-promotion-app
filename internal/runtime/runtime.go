@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/isometry/gh-promotion-app/internal/controllers"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 )
@@ -45,8 +46,17 @@ func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 		lch[k] = strings.ToLower(v)
 	}
 
-	hResponse, err := r.Handler.Process([]byte(req.Body), lch)
+	pCtx, hResponse, err := r.Handler.Process([]byte(req.Body), lch)
 	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
+
+	// Feedback loop
+	status := controllers.CommitStatusSuccess
+	if err != nil {
+		status = controllers.CommitStatusFailure
+	}
+	if statusError := r.Handler.SendFeedbackCommitStatus(pCtx, status, err); statusError != nil {
+		r.logger.Error("failed to send feedback commit status", slog.Any("error", statusError))
+	}
 
 	switch r.Handler.GetLambdaPayloadType() {
 	case "api-gateway-v1":
@@ -93,6 +103,16 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		helpers.RespondHTTP(helpers.Response{StatusCode: http.StatusInternalServerError}, err, resp)
 		return
 	}
-	response, err := r.Handler.Process(body, headers)
+	pCtx, response, err := r.Handler.Process(body, headers)
+
+	// Feedback loop
+	status := controllers.CommitStatusSuccess
+	if err != nil {
+		status = controllers.CommitStatusFailure
+	}
+	if statusError := r.Handler.SendFeedbackCommitStatus(pCtx, status, err); statusError != nil {
+		r.logger.Error("failed to send feedback commit status", slog.Any("error", statusError))
+	}
+
 	helpers.RespondHTTP(response, err, resp)
 }

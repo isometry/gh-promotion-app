@@ -51,6 +51,12 @@ var envMapString = map[*string]boundEnvVar[string]{
 		Env:         helpers.Ptr("DYNAMIC_PROMOTION_KEY"),
 		Default:     helpers.Ptr("gitops-promotion-path"),
 	},
+	&feedbackCommitStatusContext: {
+		Name:        "feedback-commit-status-context",
+		Description: "The context to use when pushing the commit status to the repository",
+		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS_CONTEXT"),
+		Default:     helpers.Ptr("gitops.promoter.lambda"),
+	},
 }
 
 var envMapBool = map[*bool]boundEnvVar[bool]{
@@ -68,6 +74,12 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Name:        "create-missing-target-branches",
 		Description: "Create missing target branches",
 		Env:         helpers.Ptr("CREATE_MISSING_TARGET_BRANCHES"),
+		Default:     helpers.Ptr(true),
+	},
+	&feedbackCommitStatus: {
+		Name:        "feedback-commit-status",
+		Description: "Enable feedback commit status",
+		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS"),
 		Default:     helpers.Ptr(true),
 	},
 }

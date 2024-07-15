@@ -34,6 +34,8 @@ var lambdaCmd = &cobra.Command{
 			handler.WithWebhookSecret(webhookSecret),
 			handler.WithDynamicPromotion(dynamicPromotion),
 			handler.WithDynamicPromotionKey(dynamicPromotionKey),
+			handler.WithFeedbackCommitStatus(feedbackCommitStatus),
+			handler.WithFeedbackCommitStatusContext(feedbackCommitStatusContext),
 			handler.WithCreateTargetRef(createTargetRef),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))

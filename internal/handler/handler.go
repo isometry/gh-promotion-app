@@ -41,10 +41,14 @@ type Handler struct {
 	ssmKey              string
 	ghToken             string
 	webhookSecret       *validation.WebhookSecret
+	lambdaPayloadType   string
+	
+	createTargetRef     bool
 	dynamicPromotion    bool
 	dynamicPromotionKey string
-	lambdaPayloadType   string
-	createTargetRef     bool
+	
+	feedbackCommitStatus        bool
+	feedbackCommitStatusContext string
 }
 
 type CommonRepository struct {
@@ -111,27 +115,27 @@ func (h *Handler) ExtractCommonRepository(body []byte) (*CommonRepository, error
 	return &eventRepository.Repository, nil
 }
 
-func (h *Handler) Process(body []byte, headers map[string]string) (response helpers.Response, err error) {
+func (h *Handler) Process(body []byte, headers map[string]string) (pCtx *promotion.Context, response helpers.Response, err error) {
 	logger := h.logger
 	logger.Info("processing request...")
 
 	eventType, found := headers[strings.ToLower(github.EventTypeHeader)]
 	if !found {
 		logger.Warn("missing event type")
-		return helpers.Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing event type")
+		return nil, helpers.Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing event type")
 	}
 
 	deliveryId, found := headers[strings.ToLower(github.DeliveryIDHeader)]
 	if !found {
 		logger.Warn("missing delivery ID")
-		return helpers.Response{Body: "missing delivery ID", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing delivery ID")
+		return nil, helpers.Response{Body: "missing delivery ID", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing delivery ID")
 	}
 
 	// Validate the request
 	resp, err := h.ValidateRequest(eventType)
 	if err != nil {
 		logger.Warn("validating request", slog.Any("error", err))
-		return *resp, err
+		return nil, *resp, err
 	}
 
 	// Add the event type to the logger now that we know it's valid
@@ -140,11 +144,11 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	// Refresh credentials if needed
 	if err = h.githubController.RetrieveCredentials(); err != nil {
 		logger.Warn("failed to refresh credentials", slog.Any("error", err))
-		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
+		return nil, helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
 	if err = h.githubController.ValidateWebhookSecret(body, headers); err != nil {
 		logger.Warn("validating signature", slog.Any("error", err))
-		return helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
+		return nil, helpers.Response{Body: err.Error(), StatusCode: http.StatusForbidden}, err
 	}
 	logger.Debug("request body is valid")
 
@@ -154,7 +158,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	repo, err := h.ExtractCommonRepository(body)
 	if err != nil {
 		logger.Warn("failed to extract repository context", slog.Any("error", err))
-		return helpers.Response{Body: "missing repository field", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing repository field")
+		return nil, helpers.Response{Body: "missing repository field", StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("missing repository field")
 	}
 
 	logger = logger.With(slog.Any("repo", repo.FullName))
@@ -164,26 +168,30 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	var clients *controllers.Client
 	if clients, err = h.githubController.GetGitHubClients(body); err != nil {
 		h.logger.Warn("failed to authenticate", slog.Any("error", err))
-		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
+		return nil, helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
 
 	event, err := github.ParseWebHook(eventType, body)
 	if err != nil {
 		logger.Warn("parsing webhook payload", slog.Any("error", err))
-		return helpers.Response{Body: err.Error(), StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("invalid payload")
+		return nil, helpers.Response{Body: err.Error(), StatusCode: http.StatusUnprocessableEntity}, fmt.Errorf("invalid payload")
 	}
 
 	if err = h.awsController.PutS3Object(eventType, os.Getenv("S3_BUCKET_NAME"), body); err != nil {
-		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
+		return nil, helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, err
 	}
 
-	pCtx := &promotion.Context{
+	pCtx = &promotion.Context{
 		EventType:  &eventType,
 		Owner:      repo.Owner.Login,
 		Repository: repo.Name,
 		Logger:     logger.With(slog.String("routine", "promotion.Context")),
 		ClientV3:   clients.V3,
 		ClientV4:   clients.V4,
+	}
+
+	if statusErr := h.SendFeedbackCommitStatus(pCtx, controllers.CommitStatusPending, nil); statusErr != nil {
+		logger.Error("failed to send feedback commit status", slog.Any("error", statusErr))
 	}
 
 	// If dynamic promotion is enabled use custom properties to set the promoter, else use the default promoter
@@ -207,7 +215,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			pCtx.BaseRef = helpers.NormaliseFullRefPtr(nextStage)
 		} else {
 			logger.Info("ignoring push event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		// Create missing target ref if the feature is enabled and the target ref does not exist
@@ -228,12 +236,12 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			pr, err = h.githubController.CreatePullRequest(pCtx)
 			if err != nil {
 				logger.Error("failed to create promotion request", slog.Any("error", err))
-				return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
+				return pCtx, helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 			}
 			logger.Info("created promotion request", slog.String("url", *pr.URL))
 		}
 
-		return helpers.Response{
+		return pCtx, helpers.Response{
 			Body:       fmt.Sprintf("created promotion req: %s", pr.GetURL()),
 			StatusCode: http.StatusCreated,
 		}, nil
@@ -246,7 +254,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 			// pass
 		default:
 			logger.Info("ignoring pull request with unprocessable event...", slog.String("action", *e.Action))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.BaseRef = helpers.NormaliseRefPtr(*e.PullRequest.Base.Ref)
@@ -260,7 +268,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 		if *e.Review.State != "approved" {
 			logger.Info("ignoring non-approved pull request review event with unprocessable review state...", slog.String("state", *e.Review.State))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.BaseRef = helpers.NormaliseRefPtr(*e.PullRequest.Base.Ref)
@@ -274,7 +282,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 		if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
 			logger.Info("ignoring incomplete check suite event with unprocessable check-suite status...", slog.String("status", *e.CheckSuite.Status))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.HeadSHA = e.CheckSuite.HeadSHA
@@ -289,7 +297,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
 			logger.Info("ignoring check suite event without matching promotion request...")
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		logger.Info("Parsed check suite event")
@@ -300,7 +308,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		state := *e.DeploymentStatus.State
 		if state != "success" {
 			logger.Info("ignoring non-success deployment status event with unprocessable deployment status state...", slog.String("state", state))
-			return helpers.Response{StatusCode: http.StatusFailedDependency}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusFailedDependency}, nil
 		}
 
 		pCtx.HeadRef = helpers.NormaliseFullRefPtr(*e.Deployment.Ref)
@@ -314,7 +322,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		state := *e.State
 		if state != "success" {
 			logger.Info("ignoring non-success status event with unprocessable status event state...", slog.String("state", state))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.HeadSHA = e.SHA
@@ -327,13 +335,13 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		status := *e.WorkflowRun.Status
 		if status != "completed" {
 			logger.Info("ignoring incomplete workflow run event with unprocessable workflow run status...", slog.String("status", status))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		conclusion := *e.WorkflowRun.Conclusion
 		if conclusion != "success" {
 			logger.Info("ignoring unsuccessful workflow run event with unprocessable workflow run conclusion...", slog.String("conclusion", conclusion))
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		pCtx.HeadSHA = e.WorkflowRun.HeadSHA
@@ -348,14 +356,14 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 
 		if pCtx.BaseRef == nil || pCtx.HeadRef == nil {
 			logger.Info("ignoring check suite event without matching promotion request...")
-			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 		}
 
 		logger.Info("parsed workflow run event")
 
 	default:
 		logger.Warn("rejecting unprocessable event type...")
-		return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+		return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
 	// ignore events without an open promotion req
@@ -363,7 +371,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		// find matching promotion request by head SHA and populate missing refs
 		if _, err = h.githubController.FindPullRequest(pCtx); err != nil {
 			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
-			return helpers.Response{StatusCode: http.StatusInternalServerError}, nil
+			return pCtx, helpers.Response{StatusCode: http.StatusInternalServerError}, nil
 		}
 	}
 
@@ -372,14 +380,25 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 	if !isPromotable {
 		logger.Info("ignoring event on a non-promotion branch",
 			slog.String("headRef", *pCtx.HeadRef))
-		return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+		return pCtx, helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
 	}
 
 	if err = h.githubController.FastForwardRefToSha(pCtx); err != nil {
-		return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
+		return pCtx, helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
 	}
 	logger.Info("fast forward complete")
-	return helpers.Response{Body: "Promotion complete", StatusCode: http.StatusNoContent}, nil
+	return pCtx, helpers.Response{Body: "Promotion complete", StatusCode: http.StatusNoContent}, nil
+}
+
+func (h *Handler) SendFeedbackCommitStatus(pCtx *promotion.Context, status controllers.CommitStatus, err error) error {
+	if h.feedbackCommitStatus {
+		return nil
+	}
+
+	if pCtx == nil {
+		return fmt.Errorf("missing promotion context")
+	}
+	return h.githubController.SendPromotionFeedbackCommitStatus(pCtx, status, h.feedbackCommitStatusContext, err)
 }
 
 func (h *Handler) GetLambdaPayloadType() string {

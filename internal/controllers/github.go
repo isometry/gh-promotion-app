@@ -284,6 +284,41 @@ func (g *GitHub) FastForwardRefToSha(pCtx *promotion.Context) error {
 	return nil
 }
 
+type CommitStatus = string
+
+const (
+	CommitStatusSuccess CommitStatus = "success"
+	CommitStatusFailure              = "failure"
+	CommitStatusError                = "error"
+	CommitStatusPending              = "pending"
+)
+
+// SendPromotionFeedbackCommitStatus sends a commit status to the head commit of the promotion request
+func (g *GitHub) SendPromotionFeedbackCommitStatus(pCtx *promotion.Context, commitStatus CommitStatus, context string, err error) error {
+	var msg string
+	if err == nil {
+		msg = "✅ Promotion successful"
+	} else {
+		msg = fmt.Sprintf("❌ Promotion failed: %v", err)
+	}
+
+	status, resp, err := pCtx.ClientV3.Repositories.CreateStatus(g.ctx, *pCtx.Owner, *pCtx.Repository, *pCtx.HeadSHA, &github.RepoStatus{
+		Description: github.String(msg),
+		Context:     github.String(context),
+		State:       github.String(commitStatus),
+	})
+
+	if err != nil {
+		var body []byte
+		if resp != nil && resp.Body != nil {
+			body, _ = io.ReadAll(resp.Body)
+		}
+		return errors.Wrapf(err, "failed to create commit status. status: %s, body: %s", status, body)
+	}
+
+	return nil
+}
+
 type CommitOnBranchRequest struct {
 	Owner, Repository, Branch, Message string
 }
