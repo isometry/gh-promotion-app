@@ -64,6 +64,12 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Description: "Enable dynamic promotion",
 		Env:         helpers.Ptr("DYNAMIC_PROMOTION"),
 	},
+	&createTargetRef: {
+		Name:        "create-missing-target-branches",
+		Description: "Create missing target branches",
+		Env:         helpers.Ptr("CREATE_MISSING_TARGET_BRANCHES"),
+		Default:     helpers.Ptr(true),
+	},
 }
 
 var envMapCount = map[*int]boundEnvVar[int]{

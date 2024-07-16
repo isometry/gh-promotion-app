@@ -2,12 +2,14 @@ package controllers
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
@@ -63,6 +65,7 @@ type GitHub struct {
 	awsController *AWS
 }
 
+// Credentials is a helper struct to hold the GitHub credentials
 type Credentials struct {
 	AppId         int64                     `json:"app_id,omitempty"`
 	PrivateKey    string                    `json:"private_key,omitempty"`
@@ -70,6 +73,7 @@ type Credentials struct {
 	Token         string                    `json:"token,omitempty"`
 }
 
+// RetrieveCredentials fetches the GitHub credentials from the environment or SSM
 func (g *GitHub) RetrieveCredentials() error {
 	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
 	case "token":
@@ -98,6 +102,7 @@ func (g *GitHub) RetrieveCredentials() error {
 	return nil
 }
 
+// GetGitHubClients returns a GitHub client for the given installation ID or token
 func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
 	var eventInstallationId EventInstallationId
 	if err := json.Unmarshal(body, &eventInstallationId); err != nil {
@@ -155,6 +160,59 @@ func (g *GitHub) ValidateWebhookSecret(secret []byte, headers map[string]string)
 	return g.WebhookSecret.ValidateSignature(secret, headers)
 }
 
+// PromotionTargetRefExists checks if a ref exists in the repository
+func (g *GitHub) PromotionTargetRefExists(ctx *promotion.Context) bool {
+	_, _, err := ctx.ClientV3.Git.GetRef(g.ctx, *ctx.Owner, *ctx.Repository, helpers.NormaliseFullRef(ctx.BaseRef))
+	return err == nil
+}
+
+// CreatePromotionTargetRef creates a new ref in the repository
+func (g *GitHub) CreatePromotionTargetRef(pCtx *promotion.Context) (*github.Reference, error) {
+	// Fetch the first commit on the head ref
+	rootCommit, err := g.GetPromotionSourceRootRef(pCtx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to fetch root commit")
+	}
+	ref := &github.Reference{
+		Ref: helpers.NormaliseFullRefPtr(pCtx.BaseRef),
+		Object: &github.GitObject{
+			SHA: rootCommit,
+		},
+	}
+	ref, _, err = pCtx.ClientV3.Git.CreateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, ref)
+	return ref, errors.Wrap(err, "failed to create ref")
+}
+
+// GetPromotionSourceRootRef fetches the root commit present on the head ref
+func (g *GitHub) GetPromotionSourceRootRef(pCtx *promotion.Context) (*string, error) {
+	var allCommits []*github.RepositoryCommit
+	opts := &github.CommitsListOptions{
+		SHA: *pCtx.HeadRef,
+		ListOptions: github.ListOptions{
+			PerPage: 100, // max allowed value
+		},
+	}
+
+	for {
+		commits, resp, err := pCtx.ClientV3.Repositories.ListCommits(context.Background(), *pCtx.Owner, *pCtx.Repository, opts)
+		if err != nil {
+			return nil, err
+		}
+		allCommits = append(allCommits, commits...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	slices.SortFunc(allCommits, func(i, j *github.RepositoryCommit) int {
+		di := i.GetCommit().Committer.GetDate()
+		dj := j.GetCommit().Committer.GetDate()
+		return cmp.Compare(di.Unix(), dj.Unix())
+	})
+	return allCommits[0].SHA, nil
+}
+
+// FindPullRequest searches for an open pull request that matches the promotion request
 func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, error) {
 	g.logger.Info("finding promotion requests...", slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
 	prListOptions := &github.PullRequestListOptions{
@@ -190,6 +248,7 @@ func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, 
 	return nil, fmt.Errorf("no matching promotion request found")
 }
 
+// CreatePullRequest creates a new pull request in the repository
 func (g *GitHub) CreatePullRequest(pCtx *promotion.Context) (*github.PullRequest, error) {
 	pr, _, err := pCtx.ClientV3.PullRequests.Create(g.ctx, *pCtx.Owner, *pCtx.Repository, &github.NewPullRequest{
 		Title:               g.RequestTitle(*pCtx),
@@ -229,6 +288,7 @@ type CommitOnBranchRequest struct {
 	Owner, Repository, Branch, Message string
 }
 
+// EmptyCommitOnBranch creates an empty commit on a branch
 func (g *GitHub) EmptyCommitOnBranch(clients *Client, ctx context.Context, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
 	// Fetch the current head commit of the branch
 	var query struct {
@@ -249,7 +309,7 @@ func (g *GitHub) EmptyCommitOnBranch(clients *Client, ctx context.Context, creat
 	}
 
 	if err := clients.V4.Query(ctx, &query, variables); err != nil {
-		return "", errors.Wrap(err, "GetBranchHeadCommit: failed to fetch the current head commit of the branch")
+		return "", errors.Wrap(err, "EmptyCommitOnBranch: failed create empty commit on branch")
 	}
 
 	createCommitOnBranchInput.ExpectedHeadOid = query.Repository.Ref.Target.Oid
@@ -268,6 +328,7 @@ func (g *GitHub) EmptyCommitOnBranch(clients *Client, ctx context.Context, creat
 	return string(mutation.CreateCommitOnBranch.Commit.Oid), nil
 }
 
+// GitHubEmptyCommitOnBranchWithDefaultClient creates an empty commit on a branch using the default client
 func GitHubEmptyCommitOnBranchWithDefaultClient(ctx context.Context, req githubv4.CreateCommitOnBranchInput, opts ...GHOption) (string, error) {
 	ctl, err := NewGitHubController(opts...)
 	if err != nil {
@@ -280,6 +341,7 @@ func GitHubEmptyCommitOnBranchWithDefaultClient(ctx context.Context, req githubv
 	return ctl.EmptyCommitOnBranch(clients, ctx, req)
 }
 
+// RequestTitle generates a title for a promotion request
 func (g *GitHub) RequestTitle(pCtx promotion.Context) *string {
 	title := fmt.Sprintf(
 		"Promote %s to %s",
@@ -293,6 +355,7 @@ type loggingRoundTripper struct {
 	logger *slog.Logger
 }
 
+// RoundTrip logs the request and response
 func (l *loggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	var buf bytes.Buffer
 	if req.Body != nil {

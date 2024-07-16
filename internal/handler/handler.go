@@ -44,6 +44,7 @@ type Handler struct {
 	dynamicPromotion    bool
 	dynamicPromotionKey string
 	lambdaPayloadType   string
+	createTargetRef     bool
 }
 
 type CommonRepository struct {
@@ -207,6 +208,13 @@ func (h *Handler) Process(body []byte, headers map[string]string) (response help
 		} else {
 			logger.Info("ignoring push event on non-promotion branch", slog.String("headRef", *pCtx.HeadRef))
 			return helpers.Response{StatusCode: http.StatusUnprocessableEntity}, nil
+		}
+
+		// Create missing target ref if the feature is enabled and the target ref does not exist
+		if h.createTargetRef && !h.githubController.PromotionTargetRefExists(pCtx) {
+			if _, err = h.githubController.CreatePromotionTargetRef(pCtx); err != nil {
+				return helpers.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}, nil
+			}
 		}
 
 		var pr *github.PullRequest

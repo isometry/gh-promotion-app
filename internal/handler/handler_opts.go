@@ -60,3 +60,9 @@ func WithDynamicPromotionKey(key string) Option {
 		h.dynamicPromotionKey = key
 	}
 }
+
+func WithCreateTargetRef(val bool) Option {
+	return func(h *Handler) {
+		h.createTargetRef = val
+	}
+}
