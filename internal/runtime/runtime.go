@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -49,28 +50,27 @@ func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 		lch[k] = strings.ToLower(v)
 	}
 
-	pCtx, hResponse, err := r.Handler.Process([]byte(req.Body), lch)
-	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
+	result, err := r.Handler.Process([]byte(req.Body), lch)
 
 	// Extensions
-	r.extensions(pCtx, err)
+	r.extensions(result, err)
 
 	payloadType := r.Handler.GetLambdaPayloadType()
 	switch payloadType {
 	case "api-gateway-v1":
 		return events.APIGatewayProxyResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       result.Response.Body,
+			StatusCode: result.Response.StatusCode,
 		}, err
 	case "api-gateway-v2":
 		return events.APIGatewayV2HTTPResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       result.Response.Body,
+			StatusCode: result.Response.StatusCode,
 		}, err
 	case "lambda-url":
 		return events.LambdaFunctionURLResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       result.Response.Body,
+			StatusCode: result.Response.StatusCode,
 		}, err
 	default:
 		return nil, fmt.Errorf("unsupported lambda payload type: %s", payloadType)
@@ -102,33 +102,28 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		helpers.RespondHTTP(helpers.Response{StatusCode: http.StatusInternalServerError}, err, resp)
 		return
 	}
-	pCtx, response, err := r.Handler.Process(body, headers)
-
-	// Feedback loop
-	status := controllers.CommitStatusSuccess
-	if err != nil {
-		status = controllers.CommitStatusFailure
-	}
-	if statusError := r.Handler.SendFeedbackCommitStatus(pCtx, status, err); statusError != nil {
-		r.logger.Error("failed to send feedback commit status", slog.Any("error", statusError))
-	}
-
-	helpers.RespondHTTP(response, err, resp)
+	result, err := r.Handler.Process(body, headers)
+	// Extensions
+	r.extensions(result, err)
+	helpers.RespondHTTP(result.Response, err, resp)
 }
 
 // extensions is a helper function to execute additional runtime extensions
-func (r *Runtime) extensions(pCtx *promotion.Context, err error) {
-	// Feedback loop: if feedbackCommitStatus is enabled, send commit status
-	status := controllers.CommitStatusSuccess
+func (r *Runtime) extensions(promotionResult *promotion.Result, err error) {
+	// send feedback commit status: error
 	if err != nil {
-		status = controllers.CommitStatusFailure
-	}
-	if statusError := r.Handler.SendFeedbackCommitStatus(pCtx, status, err); statusError != nil {
-		r.logger.Error("failed to send feedback commit status", slog.Any("error", statusError))
+		status := controllers.CommitStatusFailure
+		var promotionErr *promotion.InternalError
+		if errors.As(err, &promotionErr) {
+			status = controllers.CommitStatusError
+		}
+		if statusErr := r.Handler.SendFeedbackCommitStatus(promotionResult, err, status); statusErr != nil {
+			r.logger.Error("failed to send feedback commit status", slog.Any("error", statusErr))
+		}
 	}
 
 	// Rate limits: if fetchRateLimits is enabled, fetch rate limits
-	if rateLimits, err := r.Handler.RateLimits(pCtx); err != nil {
+	if rateLimits, err := r.Handler.RateLimits(promotionResult); err != nil {
 		r.logger.Warn("failed to fetch rate limits", slog.Any("error", err))
 	} else {
 		r.logger.Info("rate limits fetched", slog.Any("rateLimits", rateLimits))
