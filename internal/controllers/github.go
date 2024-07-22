@@ -14,7 +14,8 @@ import (
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v67/github"
+	"github.com/isometry/gh-promotion-app/internal/capabilities"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
@@ -54,7 +55,7 @@ type Client struct {
 }
 
 // _clientCache - cache of GitHub clients
-var _clientCache map[int64]*Client = make(map[int64]*Client)
+var _clientCache = make(map[int64]*Client)
 
 type GitHub struct {
 	Credentials
@@ -133,7 +134,7 @@ func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
 		)
 		httpClient := oauth2.NewClient(g.ctx, src)
 		clientV4 = githubv4.NewClient(httpClient)
-	case g.PrivateKey != "" && g.AppId != 0 && installationId != nil:
+	case g.PrivateKey != "" && g.AppId != 0:
 		g.logger.Debug("Spawning credentials using GitHub App credentials from SSM...")
 		roundTripper := &loggingRoundTripper{logger: g.logger}
 		transport, err := ghinstallation.New(roundTripper, g.AppId, *installationId, []byte(g.PrivateKey))
@@ -295,13 +296,18 @@ const (
 )
 
 // SendPromotionFeedbackCommitStatus sends a commit status to the head commit of the promotion request
-func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResult *promotion.Result, promotionError error, commitStatus CommitStatus) error {
-	// Validate required fields
-	if promotionResult == nil {
-		return fmt.Errorf("promotion result is nil")
+func (g *GitHub) SendPromotionFeedbackCommitStatus(bus *promotion.Bus, promotionError error, commitStatus CommitStatus) error {
+	if !capabilities.Promotion.Feedback.Enabled {
+		g.logger.Debug("promotion feedback is disabled")
+		return nil
 	}
 
-	pCtx := promotionResult.Context
+	// Validate required fields
+	if bus == nil {
+		return fmt.Errorf("promotion bus is nil")
+	}
+
+	pCtx := bus.Context
 	feedbackLogger := pCtx.Logger.WithGroup("feedback:commit-status")
 	// Skip if the context is missing required fields
 	if pCtx.Owner == nil || pCtx.Repository == nil || pCtx.HeadSHA == nil {
@@ -310,26 +316,27 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResu
 		return nil
 	}
 
+	// Set the target URL if a pull request is present
 	if pCtx.PullRequest == nil {
 		feedbackLogger.Debug("ignoring promotion feedback commit status due to missing PullRequest reference",
 			slog.Any("context", pCtx))
 		return nil
 	}
 
-	// Support placeholders
-	contextSubstitution := make(map[string]string)
-	if pCtx.HeadRef != nil && pCtx.BaseRef != nil {
-		contextSubstitution["{source}"] = helpers.ExtractRefFromFullRef(*pCtx.HeadRef)
-		contextSubstitution["{target}"] = helpers.ExtractRefFromFullRef(*pCtx.BaseRef)
-
-		for k, v := range contextSubstitution {
-			context = strings.ReplaceAll(context, k, v)
-		}
-	}
-
-	// Infer the commit status from the provided promotion.Result and error
+	// Infer the commit status from the provided promotion.Bus and error
 	stages, index := pCtx.Promoter.Stages, pCtx.Promoter.StageIndex(*pCtx.HeadRef)
 	progress := fmt.Sprintf("%d/%d", index+1, len(stages))
+
+	// Local placeholders
+	placeholders := map[string]string{
+		"{progress}":          progress,
+		"{rfc3339-timestamp}": time.Now().Format(time.RFC3339),
+	}
+	contextValue := capabilities.Promotion.Feedback.Context
+	if pCtx.HeadRef != nil && pCtx.BaseRef != nil {
+		placeholders["{source}"] = helpers.ExtractRefFromFullRef(*pCtx.HeadRef)
+		placeholders["{target}"] = helpers.ExtractRefFromFullRef(*pCtx.BaseRef)
+	}
 
 	// Truncate error (140 max length) -40 lines to allow decoration
 	promotionErrorTruncated := helpers.Truncate(fmt.Sprintf("%v", promotionError), 100)
@@ -349,21 +356,24 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResu
 		return fmt.Errorf("unknown commit status: %s", commitStatus)
 	}
 
-	// Placeholders
-	rfc3339 := time.Now().UTC().Format(time.RFC3339)
+	// Replace placeholders
+	for k, v := range placeholders {
+		msg = strings.ReplaceAll(msg, k, v)
+		contextValue = strings.ReplaceAll(contextValue, k, v)
+	}
 
-	msg = strings.ReplaceAll(msg, "{progress}", progress)
-	msg = strings.ReplaceAll(msg, "{rfc3339-timestamp}", rfc3339)
+	// Truncate (140 max length)
+	msg = helpers.Truncate(msg, 140)
 
 	status := &github.RepoStatus{
 		Description: github.String(msg),
-		Context:     github.String(context),
+		Context:     github.String(contextValue),
 		State:       github.String(commitStatus),
 		TargetURL:   pCtx.PullRequest.HTMLURL,
 	}
 
 	feedbackLogger.Debug("sending commit status",
-		slog.String("status", commitStatus), slog.String("context", context), slog.String("msg", msg),
+		slog.String("status", commitStatus), slog.String("context", contextValue), slog.String("msg", msg),
 		slog.String("eventType", fmt.Sprintf("%T", pCtx.EventType)), slog.Any("promotionError", promotionError))
 	_, resp, err := pCtx.ClientV3.Repositories.CreateStatus(g.ctx, *pCtx.Owner, *pCtx.Repository, *pCtx.HeadSHA, status)
 
