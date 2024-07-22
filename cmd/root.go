@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -16,9 +15,16 @@ func Execute() error {
 }
 
 var (
+	// Extensions >
 	dynamicPromotion    bool
 	dynamicPromotionKey string
 	createTargetRef     bool
+
+	feedbackCommitStatus        bool
+	feedbackCommitStatusContext string
+
+	fetchRateLimits bool
+	// />
 
 	runtimeMode    string
 	githubAuthMode string
@@ -31,7 +37,7 @@ var (
 	callerTrace bool
 )
 
-type boundEnvVar[T string | bool | int | time.Duration] struct {
+type boundEnvVar[T argType] struct {
 	Name, Description string
 	Env, Short        *string
 	Hidden            bool

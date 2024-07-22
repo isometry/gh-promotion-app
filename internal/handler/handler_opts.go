@@ -66,3 +66,21 @@ func WithCreateTargetRef(val bool) Option {
 		h.createTargetRef = val
 	}
 }
+
+func WithFeedbackCommitStatus(val bool) Option {
+	return func(h *Handler) {
+		h.feedbackCommitStatus = val
+	}
+}
+
+func WithFeedbackCommitStatusContext(context string) Option {
+	return func(h *Handler) {
+		h.feedbackCommitStatusContext = context
+	}
+}
+
+func WithFetchRateLimits(val bool) Option {
+	return func(h *Handler) {
+		h.fetchRateLimits = val
+	}
+}
