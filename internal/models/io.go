@@ -1,4 +1,4 @@
-package helpers
+package models
 
 type Request struct {
 	Body    string

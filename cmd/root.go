@@ -15,17 +15,6 @@ func Execute() error {
 }
 
 var (
-	// Extensions >
-	dynamicPromotion    bool
-	dynamicPromotionKey string
-	createTargetRef     bool
-
-	feedbackCommitStatus        bool
-	feedbackCommitStatusContext string
-
-	fetchRateLimits bool
-	// />
-
 	runtimeMode    string
 	githubAuthMode string
 	githubToken    string

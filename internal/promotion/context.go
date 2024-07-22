@@ -5,12 +5,25 @@ import (
 
 	"github.com/google/go-github/v62/github"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/models"
 	"github.com/shurcooL/githubv4"
 )
 
-type Result struct {
+type Bus struct {
 	Context  *Context
-	Response helpers.Response
+	Response models.Response
+
+	EventType string
+	Event     any
+
+	Body    []byte
+	Headers map[string]string
+
+	Repository *models.CommonRepository
+}
+
+func (b *Bus) LogValue() slog.Value {
+	return b.Context.LogValue()
 }
 
 type Context struct {
