@@ -34,10 +34,7 @@ var serviceCmd = &cobra.Command{
 			handler.WithSSMKey(githubSSMKey),
 			handler.WithDynamicPromotion(dynamicPromotion),
 			handler.WithDynamicPromotionKey(dynamicPromotionKey),
-			handler.WithFeedbackCommitStatus(feedbackCommitStatus),
-			handler.WithFeedbackCommitStatusContext(feedbackCommitStatusContext),
 			handler.WithCreateTargetRef(createTargetRef),
-			handler.WithFetchRateLimits(fetchRateLimits),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {

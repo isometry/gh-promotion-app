@@ -122,10 +122,15 @@ func (r *Runtime) extensions(promotionResult *promotion.Result, err error) {
 		}
 	}
 
-	// Rate limits: if fetchRateLimits is enabled, fetch rate limits
-	if rateLimits, err := r.Handler.RateLimits(promotionResult); err != nil {
-		r.logger.Warn("failed to fetch rate limits", slog.Any("error", err))
-	} else {
-		r.logger.Info("rate limits fetched", slog.Any("rateLimits", rateLimits))
+	// Rate limits: if there was no promotion error and if fetchRateLimits is enabled, fetch rate limits
+	if err == nil {
+		// Only attempt to fetch rate limits once a minute (per Lambda runtime)
+		helpers.OnceAMinute.Do(func() {
+			if rateLimits, err := r.Handler.RateLimits(promotionResult); err != nil {
+				r.logger.Warn("failed to fetch GitHub rate limits", slog.Any("error", err))
+			} else {
+				r.logger.Info("GitHub rate limits", slog.Any("rateLimits", rateLimits))
+			}
+		})
 	}
 }

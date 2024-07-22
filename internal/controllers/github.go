@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v62/github"
@@ -53,7 +54,7 @@ type Client struct {
 }
 
 // _clientCache - cache of GitHub clients
-var _clientCache = make(map[int64]*Client)
+var _clientCache map[int64]*Client = make(map[int64]*Client)
 
 type GitHub struct {
 	Credentials
@@ -309,7 +310,6 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResu
 		return nil
 	}
 
-	// Set the target URL if a pull request is present
 	if pCtx.PullRequest == nil {
 		feedbackLogger.Debug("ignoring promotion feedback commit status due to missing PullRequest reference",
 			slog.Any("context", pCtx))
@@ -331,26 +331,29 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResu
 	stages, index := pCtx.Promoter.Stages, pCtx.Promoter.StageIndex(*pCtx.HeadRef)
 	progress := fmt.Sprintf("%d/%d", index+1, len(stages))
 
+	// Truncate error (140 max length) -40 lines to allow decoration
+	promotionErrorTruncated := helpers.Truncate(fmt.Sprintf("%v", promotionError), 100)
+
 	// Set the commit status message accordingly
 	var msg string
 	switch commitStatus {
 	case CommitStatusSuccess:
-		msg = "✅ Promotion successful :: {progress}"
+		msg = "✅ {progress} @ {rfc3339-timestamp}"
 	case CommitStatusFailure:
-		msg = fmt.Sprintf("❌ Promotion failed: %v", promotionError)
+		msg = fmt.Sprintf("❌ %v @ {rfc3339-timestamp}", promotionErrorTruncated)
 	case CommitStatusError:
-		msg = fmt.Sprintf("💥 Promotion internal error: %v", promotionError)
+		msg = fmt.Sprintf("💥 %v @ {rfc3339-timestamp}", promotionErrorTruncated)
 	case CommitStatusPending:
-		msg = "⏳ Promotion pending Quality-Gates :: {progress}"
+		msg = "⏳ {progress} @ {rfc3339-timestamp}"
 	default:
 		return fmt.Errorf("unknown commit status: %s", commitStatus)
 	}
 
 	// Placeholders
-	msg = strings.ReplaceAll(msg, "{progress}", progress)
+	rfc3339 := time.Now().UTC().Format(time.RFC3339)
 
-	// Truncate (140 max length)
-	msg = helpers.Truncate(msg, 140)
+	msg = strings.ReplaceAll(msg, "{progress}", progress)
+	msg = strings.ReplaceAll(msg, "{rfc3339-timestamp}", rfc3339)
 
 	status := &github.RepoStatus{
 		Description: github.String(msg),
