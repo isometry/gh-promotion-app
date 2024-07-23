@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/models"
 )
 
 type Option func(*Runtime)
@@ -25,6 +26,7 @@ type Runtime struct {
 	logger *slog.Logger
 }
 
+// NewRuntime creates a new runtime instance
 func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 	_inst := &Runtime{Handler: handler}
 	for _, opt := range opts {
@@ -36,46 +38,47 @@ func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 	return _inst
 }
 
-func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
+// HandleEvent is the Lambda handler for the runtime
+func (r *Runtime) HandleEvent(req models.Request) (response any, err error) {
 	r.logger.Info("received API Gateway request")
 
 	// Lower-case incoming headers for compatibility purposes
-	lch := make(map[string]string)
+	lch := make(map[string]string, len(req.Headers))
 	for k, v := range req.Headers {
 		lch[k] = strings.ToLower(v)
 	}
 
-	hResponse, err := r.Handler.Process([]byte(req.Body), lch)
-	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
-
-	switch r.Handler.GetLambdaPayloadType() {
+	bus, err := r.Handler.Process([]byte(req.Body), lch)
+	payloadType := r.Handler.GetLambdaPayloadType()
+	switch payloadType {
 	case "api-gateway-v1":
 		return events.APIGatewayProxyResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       bus.Response.Body,
+			StatusCode: bus.Response.StatusCode,
 		}, err
 	case "api-gateway-v2":
 		return events.APIGatewayV2HTTPResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       bus.Response.Body,
+			StatusCode: bus.Response.StatusCode,
 		}, err
 	case "lambda-url":
 		return events.LambdaFunctionURLResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       bus.Response.Body,
+			StatusCode: bus.Response.StatusCode,
 		}, err
 	default:
-		return nil, fmt.Errorf("unsupported lambda payload type: %s", r.Handler.GetLambdaPayloadType())
+		return nil, fmt.Errorf("unsupported lambda payload type: %s", payloadType)
 	}
 }
 
+// ServeHTTP is the HTTP handler for the runtime
 func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodPost:
 		break
 	default:
 		r.logger.Debug("rejecting HTTP request...", slog.Any("requestor", req.RemoteAddr), "reason", "method not allowed", slog.Any("method", req.Method))
-		helpers.RespondHTTP(helpers.Response{StatusCode: http.StatusMethodNotAllowed}, nil, resp)
+		helpers.RespondHTTP(models.Response{StatusCode: http.StatusMethodNotAllowed}, nil, resp)
 		return
 	}
 
@@ -90,9 +93,9 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		r.logger.Error("failed to read request body", slog.Any("error", err))
-		helpers.RespondHTTP(helpers.Response{StatusCode: http.StatusInternalServerError}, err, resp)
+		helpers.RespondHTTP(models.Response{StatusCode: http.StatusInternalServerError}, err, resp)
 		return
 	}
-	response, err := r.Handler.Process(body, headers)
-	helpers.RespondHTTP(response, err, resp)
+	bus, err := r.Handler.Process(body, headers)
+	helpers.RespondHTTP(bus.Response, err, resp)
 }

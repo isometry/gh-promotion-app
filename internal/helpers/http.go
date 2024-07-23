@@ -3,6 +3,8 @@ package helpers
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/isometry/gh-promotion-app/internal/models"
 )
 
 type httpResponse struct {
@@ -10,7 +12,7 @@ type httpResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func RespondHTTP(response Response, err error, rw http.ResponseWriter) {
+func RespondHTTP(response models.Response, err error, rw http.ResponseWriter) {
 	hR := httpResponse{
 		Message: response.Body,
 	}

@@ -28,3 +28,7 @@ func NormaliseFullRefPtr[S string | *string](ref S) *string {
 	rn := NormaliseFullRef(ref)
 	return &rn
 }
+
+func ExtractRefFromFullRef(fullRef string) string {
+	return strings.TrimPrefix(fullRef, "refs/heads/")
+}
