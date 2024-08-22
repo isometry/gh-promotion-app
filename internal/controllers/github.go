@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v62/github"
@@ -282,6 +283,112 @@ func (g *GitHub) FastForwardRefToSha(pCtx *promotion.Context) error {
 
 	ctxLogger.Debug("successful fast forward")
 	return nil
+}
+
+type CommitStatus = string
+
+const (
+	CommitStatusSuccess CommitStatus = "success"
+	CommitStatusFailure              = "failure"
+	CommitStatusError                = "error"
+	CommitStatusPending              = "pending"
+)
+
+// SendPromotionFeedbackCommitStatus sends a commit status to the head commit of the promotion request
+func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResult *promotion.Result, promotionError error, commitStatus CommitStatus) error {
+	// Validate required fields
+	if promotionResult == nil {
+		return fmt.Errorf("promotion result is nil")
+	}
+
+	pCtx := promotionResult.Context
+	feedbackLogger := pCtx.Logger.WithGroup("feedback:commit-status")
+	// Skip if the context is missing required fields
+	if pCtx.Owner == nil || pCtx.Repository == nil || pCtx.HeadSHA == nil {
+		feedbackLogger.Debug("ignoring promotion feedback commit status due to missing context fields",
+			slog.Any("context", pCtx))
+		return nil
+	}
+
+	if pCtx.PullRequest == nil {
+		feedbackLogger.Debug("ignoring promotion feedback commit status due to missing PullRequest reference",
+			slog.Any("context", pCtx))
+		return nil
+	}
+
+	// Support placeholders
+	contextSubstitution := make(map[string]string)
+	if pCtx.HeadRef != nil && pCtx.BaseRef != nil {
+		contextSubstitution["{source}"] = helpers.ExtractRefFromFullRef(*pCtx.HeadRef)
+		contextSubstitution["{target}"] = helpers.ExtractRefFromFullRef(*pCtx.BaseRef)
+
+		for k, v := range contextSubstitution {
+			context = strings.ReplaceAll(context, k, v)
+		}
+	}
+
+	// Infer the commit status from the provided promotion.Result and error
+	stages, index := pCtx.Promoter.Stages, pCtx.Promoter.StageIndex(*pCtx.HeadRef)
+	progress := fmt.Sprintf("%d/%d", index+1, len(stages))
+
+	// Truncate error (140 max length) -40 lines to allow decoration
+	promotionErrorTruncated := helpers.Truncate(fmt.Sprintf("%v", promotionError), 100)
+
+	// Set the commit status message accordingly
+	var msg string
+	switch commitStatus {
+	case CommitStatusSuccess:
+		msg = "✅ {progress} @ {rfc3339-timestamp}"
+	case CommitStatusFailure:
+		msg = fmt.Sprintf("❌ %v @ {rfc3339-timestamp}", promotionErrorTruncated)
+	case CommitStatusError:
+		msg = fmt.Sprintf("💥 %v @ {rfc3339-timestamp}", promotionErrorTruncated)
+	case CommitStatusPending:
+		msg = "⏳ {progress} @ {rfc3339-timestamp}"
+	default:
+		return fmt.Errorf("unknown commit status: %s", commitStatus)
+	}
+
+	// Placeholders
+	rfc3339 := time.Now().UTC().Format(time.RFC3339)
+
+	msg = strings.ReplaceAll(msg, "{progress}", progress)
+	msg = strings.ReplaceAll(msg, "{rfc3339-timestamp}", rfc3339)
+
+	status := &github.RepoStatus{
+		Description: github.String(msg),
+		Context:     github.String(context),
+		State:       github.String(commitStatus),
+		TargetURL:   pCtx.PullRequest.HTMLURL,
+	}
+
+	feedbackLogger.Debug("sending commit status",
+		slog.String("status", commitStatus), slog.String("context", context), slog.String("msg", msg),
+		slog.String("eventType", fmt.Sprintf("%T", pCtx.EventType)), slog.Any("promotionError", promotionError))
+	_, resp, err := pCtx.ClientV3.Repositories.CreateStatus(g.ctx, *pCtx.Owner, *pCtx.Repository, *pCtx.HeadSHA, status)
+
+	if err != nil {
+		var body []byte
+		if resp != nil && resp.Body != nil {
+			body, _ = io.ReadAll(resp.Body)
+		}
+		feedbackLogger.Error("failed to send commit status", slog.Any("error", err), slog.String("body", string(body)))
+		return errors.Wrapf(err, "failed to create commit status. status: %s, body: %s", status, body)
+	}
+	feedbackLogger.Debug("successfully sent commit status", slog.Any("status", status.String()), slog.Any("sha", *pCtx.HeadSHA))
+
+	return nil
+}
+
+// RateLimits fetches the rate limits for the currently authenticated identity
+func (g *GitHub) RateLimits(clt *github.Client) (*github.RateLimits, error) {
+	rate, _, err := clt.RateLimit.Get(g.ctx)
+	if err != nil {
+		g.logger.Error("failed to fetch rate limits", slog.Any("error", err))
+		return nil, err
+	}
+
+	return rate, nil
 }
 
 type CommitOnBranchRequest struct {

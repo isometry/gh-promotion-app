@@ -51,6 +51,12 @@ var envMapString = map[*string]boundEnvVar[string]{
 		Env:         helpers.Ptr("DYNAMIC_PROMOTION_KEY"),
 		Default:     helpers.Ptr("gitops-promotion-path"),
 	},
+	&feedbackCommitStatusContext: {
+		Name:        "feedback-commit-status-context",
+		Description: "The context key to use when pushing the commit status to the repository. Supported placeholders: {source}, {target}",
+		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS_CONTEXT"),
+		Default:     helpers.Ptr("{source}→{target}"),
+	},
 }
 
 var envMapBool = map[*bool]boundEnvVar[bool]{
@@ -68,6 +74,18 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Name:        "create-missing-target-branches",
 		Description: "Create missing target branches",
 		Env:         helpers.Ptr("CREATE_MISSING_TARGET_BRANCHES"),
+		Default:     helpers.Ptr(true),
+	},
+	&feedbackCommitStatus: {
+		Name:        "feedback-commit-status",
+		Description: "Enable feedback commit status",
+		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS"),
+		Default:     helpers.Ptr(true),
+	},
+	&fetchRateLimits: {
+		Name:        "fetch-rate-limits",
+		Description: "Enable per-event fetching of rate limits and corresponding logs decoration",
+		Env:         helpers.Ptr("FETCH_RATE_LIMITS"),
 		Default:     helpers.Ptr(true),
 	},
 }

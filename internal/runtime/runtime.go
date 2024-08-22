@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -8,8 +9,10 @@ import (
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/isometry/gh-promotion-app/internal/controllers"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
 
 type Option func(*Runtime)
@@ -25,6 +28,7 @@ type Runtime struct {
 	logger *slog.Logger
 }
 
+// NewRuntime creates a new runtime instance
 func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 	_inst := &Runtime{Handler: handler}
 	for _, opt := range opts {
@@ -36,6 +40,7 @@ func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 	return _inst
 }
 
+// HandleEvent is the Lambda handler for the runtime
 func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 	r.logger.Info("received API Gateway request")
 
@@ -45,30 +50,34 @@ func (r *Runtime) HandleEvent(req helpers.Request) (response any, err error) {
 		lch[k] = strings.ToLower(v)
 	}
 
-	hResponse, err := r.Handler.Process([]byte(req.Body), lch)
-	r.logger.Info("handled event", slog.Any("response", hResponse), slog.Any("error", err))
+	result, err := r.Handler.Process([]byte(req.Body), lch)
 
-	switch r.Handler.GetLambdaPayloadType() {
+	// Extensions
+	r.extensions(result, err)
+
+	payloadType := r.Handler.GetLambdaPayloadType()
+	switch payloadType {
 	case "api-gateway-v1":
 		return events.APIGatewayProxyResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       result.Response.Body,
+			StatusCode: result.Response.StatusCode,
 		}, err
 	case "api-gateway-v2":
 		return events.APIGatewayV2HTTPResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       result.Response.Body,
+			StatusCode: result.Response.StatusCode,
 		}, err
 	case "lambda-url":
 		return events.LambdaFunctionURLResponse{
-			Body:       hResponse.Body,
-			StatusCode: hResponse.StatusCode,
+			Body:       result.Response.Body,
+			StatusCode: result.Response.StatusCode,
 		}, err
 	default:
-		return nil, fmt.Errorf("unsupported lambda payload type: %s", r.Handler.GetLambdaPayloadType())
+		return nil, fmt.Errorf("unsupported lambda payload type: %s", payloadType)
 	}
 }
 
+// ServeHTTP is the HTTP handler for the runtime
 func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodPost:
@@ -93,6 +102,35 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		helpers.RespondHTTP(helpers.Response{StatusCode: http.StatusInternalServerError}, err, resp)
 		return
 	}
-	response, err := r.Handler.Process(body, headers)
-	helpers.RespondHTTP(response, err, resp)
+	result, err := r.Handler.Process(body, headers)
+	// Extensions
+	r.extensions(result, err)
+	helpers.RespondHTTP(result.Response, err, resp)
+}
+
+// extensions is a helper function to execute additional runtime extensions
+func (r *Runtime) extensions(promotionResult *promotion.Result, err error) {
+	// send feedback commit status: error
+	if err != nil {
+		status := controllers.CommitStatusFailure
+		var promotionErr *promotion.InternalError
+		if errors.As(err, &promotionErr) {
+			status = controllers.CommitStatusError
+		}
+		if statusErr := r.Handler.SendFeedbackCommitStatus(promotionResult, err, status); statusErr != nil {
+			r.logger.Error("failed to send feedback commit status", slog.Any("error", statusErr))
+		}
+	}
+
+	// Rate limits: if there was no promotion error and if fetchRateLimits is enabled, fetch rate limits
+	if err == nil {
+		// Only attempt to fetch rate limits once a minute (per Lambda runtime)
+		helpers.OnceAMinute.Do(func() {
+			if rateLimits, err := r.Handler.RateLimits(promotionResult); err != nil {
+				r.logger.Warn("failed to fetch GitHub rate limits", slog.Any("error", err))
+			} else {
+				r.logger.Info("GitHub rate limits", slog.Any("rateLimits", rateLimits))
+			}
+		})
+	}
 }
