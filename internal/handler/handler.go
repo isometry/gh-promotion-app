@@ -405,7 +405,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (result *promo
 	if result.Context.BaseRef == nil || result.Context.HeadRef == nil {
 		// find matching promotion request by head SHA and populate missing refs
 		if result.Context.PullRequest, err = h.githubController.FindPullRequest(result.Context); err != nil {
-			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *result.Context.HeadRef), slog.String("headSHA", *result.Context.HeadSHA))
+			logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headSHA", *result.Context.HeadSHA))
 			return result, nil
 		}
 	}
