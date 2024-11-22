@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v62/github"
+	"github.com/google/go-github/v66/github"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
