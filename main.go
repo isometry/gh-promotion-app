@@ -1,3 +1,4 @@
+// Package main provides the entrypoint for gh-promotion-app.
 package main
 
 import (

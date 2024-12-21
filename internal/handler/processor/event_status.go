@@ -14,6 +14,7 @@ type statusProcessor struct {
 	githubController *controllers.GitHub
 }
 
+// NewStatusEventProcessor constructs a Processor instance for handling GitHub status events with optional configurations.
 func NewStatusEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &statusProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)

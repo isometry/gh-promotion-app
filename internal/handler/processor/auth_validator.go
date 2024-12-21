@@ -19,6 +19,8 @@ type authValidatorProcessor struct {
 	githubController *controllers.GitHub
 }
 
+// NewAuthValidatorProcessor initializes and returns a new Processor for validating authentication against GitHub operations.
+// It accepts a GitHub controller and optional configuration options to customize its behavior.
 func NewAuthValidatorProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &authValidatorProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
@@ -54,7 +56,7 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 	}
 	bus.EventType = eventType
 
-	deliveryId, found := headers[strings.ToLower(github.DeliveryIDHeader)]
+	deliveryID, found := headers[strings.ToLower(github.DeliveryIDHeader)]
 	if !found {
 		p.logger.Warn("missing delivery ID")
 		return &promotion.Bus{
@@ -90,9 +92,9 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 	p.logger.Debug("request body is valid")
 
 	// Add the delivery ID to the logger, now that we know the payload is valid
-	p.logger = p.logger.With(slog.String("deliveryId", deliveryId))
+	p.logger = p.logger.With(slog.String("deliveryID", deliveryID))
 
-	repo, err := p.ExtractCommonRepository(body)
+	repo, err := p.ExtractRepositoryContext(body)
 	if err != nil {
 		p.logger.Warn("failed to extract repository context", slog.Any("error", err))
 		return &promotion.Bus{
@@ -142,10 +144,10 @@ func (p *authValidatorProcessor) checkEventType(eventType string, definedTypes m
 	return nil, nil
 }
 
-func (p *authValidatorProcessor) ExtractCommonRepository(body []byte) (*models.CommonRepository, error) {
+func (p *authValidatorProcessor) ExtractRepositoryContext(body []byte) (*models.RepositoryContext, error) {
 	var eventRepository models.EventRepository
 	if err := json.Unmarshal(body, &eventRepository); err != nil {
-		return nil, fmt.Errorf("event repository not found. error: %v", err)
+		return nil, fmt.Errorf("event repository not found. error: %w", err)
 	}
 
 	return &eventRepository.Repository, nil

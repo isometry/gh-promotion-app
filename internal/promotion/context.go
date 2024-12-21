@@ -1,3 +1,4 @@
+// Package promotion provides the core functionality for handling promotion events and managing related context and response details.
 package promotion
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
+// Bus represents the central data structure for processing events and managing related context and response details.
 type Bus struct {
 	Context  *Context
 	Response models.Response
@@ -19,13 +21,15 @@ type Bus struct {
 	Body    []byte
 	Headers map[string]string
 
-	Repository *models.CommonRepository
+	Repository *models.RepositoryContext
 }
 
+// LogValue returns a slog.Value by delegating to the Context's LogValue method, encapsulating structured log attributes.
 func (b *Bus) LogValue() slog.Value {
 	return b.Context.LogValue()
 }
 
+// Context represents the runtime context for handling promotion events and related GitHub interactions.
 type Context struct {
 	Logger      *slog.Logger
 	EventType   any
@@ -41,6 +45,8 @@ type Context struct {
 	ClientV4 *githubv4.Client
 }
 
+// LogValue generates a structured log value containing context-related attributes like event type, owner, and repository.
+// It dynamically includes optional attributes such as head SHA, head reference, and base reference if they are not nil.
 func (p *Context) LogValue() slog.Value {
 	logAttr := make([]slog.Attr, 1, 6)
 	logAttr[0] = slog.Any("eventType", p.EventType)

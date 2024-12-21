@@ -17,14 +17,15 @@ type pushEventProcessor struct {
 	githubController *controllers.GitHub
 }
 
-func (p *pushEventProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:push_event")
-}
-
+// NewPushEventProcessor creates a push event processor with an optional configuration and attaches a GitHub controller to it.
 func NewPushEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &pushEventProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
+}
+
+func (p *pushEventProcessor) SetLogger(logger *slog.Logger) {
+	p.logger = logger.WithGroup("processor:push_event")
 }
 
 func (p *pushEventProcessor) Process(req any) (bus *promotion.Bus, err error) {

@@ -1,3 +1,4 @@
+// Package runtime provides the runtime for the application.
 package runtime
 
 import (
@@ -13,14 +14,17 @@ import (
 	"github.com/isometry/gh-promotion-app/internal/models"
 )
 
+// Option defines a function type used to configure a Runtime instance during initialization.
 type Option func(*Runtime)
 
+// WithLogger sets the logger for the Runtime instance, enabling structured logging for runtime processes.
 func WithLogger(logger *slog.Logger) Option {
 	return func(r *Runtime) {
 		r.logger = logger
 	}
 }
 
+// Runtime represents the execution context integrating the handler and logger for processing runtime events.
 type Runtime struct {
 	*handler.Handler
 	logger *slog.Logger
@@ -49,6 +53,10 @@ func (r *Runtime) HandleEvent(req models.Request) (response any, err error) {
 	}
 
 	bus, err := r.Handler.Process([]byte(req.Body), lch)
+	if err != nil {
+		return nil, err
+	}
+
 	payloadType := r.Handler.GetLambdaPayloadType()
 	switch payloadType {
 	case "api-gateway-v1":
@@ -97,5 +105,10 @@ func (r *Runtime) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 	bus, err := r.Handler.Process(body, headers)
+	if err != nil {
+		r.logger.Error("failed to process request", slog.Any("error", err))
+		helpers.RespondHTTP(models.Response{StatusCode: http.StatusInternalServerError}, err, resp)
+		return
+	}
 	helpers.RespondHTTP(bus.Response, err, resp)
 }

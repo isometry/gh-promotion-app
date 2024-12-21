@@ -1,3 +1,4 @@
+// Package validation provides functionality for validating webhook signatures to verify request authenticity.
 package validation
 
 import (
@@ -7,13 +8,16 @@ import (
 	"github.com/google/go-github/v67/github"
 )
 
+// WebhookSecret represents a secret used to validate webhook signatures for verifying request authenticity.
 type WebhookSecret string
 
+// NewWebhookSecret creates a new WebhookSecret instance from the provided secret string pointer and returns its address.
 func NewWebhookSecret(secret string) *WebhookSecret {
 	s := WebhookSecret(secret)
 	return &s
 }
 
+// ValidateSignature validates the HMAC-SHA256 signature of a webhook request using the provided body and headers.
 func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) error {
 	if s == nil {
 		return fmt.Errorf("missing webhook secret")

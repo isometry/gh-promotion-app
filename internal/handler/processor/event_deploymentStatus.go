@@ -14,6 +14,7 @@ type deploymentStatusProcessor struct {
 	githubController *controllers.GitHub
 }
 
+// NewDeploymentStatusEventProcessor initializes a Processor for handling deployment status events with optional configurations.
 func NewDeploymentStatusEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &deploymentStatusProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)

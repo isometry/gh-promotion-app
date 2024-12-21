@@ -12,6 +12,7 @@ type httpResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// RespondHTTP writes the response to the http.ResponseWriter
 func RespondHTTP(response models.Response, err error, rw http.ResponseWriter) {
 	hR := httpResponse{
 		Message: response.Body,
@@ -20,7 +21,7 @@ func RespondHTTP(response models.Response, err error, rw http.ResponseWriter) {
 		hR.Error = err.Error()
 	}
 
-	respBody, _ := json.Marshal(hR)
+	respBody, _ := json.Marshal(hR) //nolint:errchkjson // Errors can be safely ignored in this context
 	statusCode := response.StatusCode
 	if statusCode == 0 {
 		statusCode = http.StatusOK

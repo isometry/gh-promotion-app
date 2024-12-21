@@ -18,6 +18,7 @@ func (p *pullRequestEventProcessor) SetLogger(logger *slog.Logger) {
 	p.logger = logger.WithGroup("processor:pull_request")
 }
 
+// NewPullRequestEventProcessor creates and returns a Processor to handle pull request events, initialized with given GitHub controller and options.
 func NewPullRequestEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &pullRequestEventProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)

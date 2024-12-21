@@ -14,6 +14,7 @@ type dynamicPromotionProcessor struct {
 	githubController *controllers.GitHub
 }
 
+// NewDynamicPromotionPreProcessor initializes and returns a Processor for handling dynamic promotion, applying the given options.
 func NewDynamicPromotionPreProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &dynamicPromotionProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)

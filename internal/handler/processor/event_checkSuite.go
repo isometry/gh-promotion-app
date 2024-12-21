@@ -15,14 +15,15 @@ type checkSuiteEventProcessor struct {
 	githubController *controllers.GitHub
 }
 
-func (p *checkSuiteEventProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:check_suite")
-}
-
+// NewCheckSuiteEventProcessor initializes a Processor for handling check suite events with optional configurations.
 func NewCheckSuiteEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &checkSuiteEventProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
+}
+
+func (p *checkSuiteEventProcessor) SetLogger(logger *slog.Logger) {
+	p.logger = logger.WithGroup("processor:check_suite")
 }
 
 func (p *checkSuiteEventProcessor) Process(req any) (bus *promotion.Bus, err error) {

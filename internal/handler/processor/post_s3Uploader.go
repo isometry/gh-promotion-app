@@ -16,6 +16,7 @@ type s3UploaderPostProcessor struct {
 	awsController *controllers.AWS
 }
 
+// NewS3UploaderPostProcessor constructs a Processor instance for handling S3 upload post-processing with optional configurations.
 func NewS3UploaderPostProcessor(awsController *controllers.AWS, opts ...Option) Processor {
 	_inst := &s3UploaderPostProcessor{awsController: awsController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)

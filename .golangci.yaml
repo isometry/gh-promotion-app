@@ -1,0 +1,149 @@
+run:
+  timeout: 10m
+  allow-parallel-runners: true
+
+output:
+  formats:
+    - format: colored-line-number
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+
+  govet:
+    check-shadowing: false
+
+  gofmt:
+    simplify: true
+
+  gci:
+    custom-order: true
+    sections:
+      - standard
+      - default
+      - blank
+      - dot
+
+  gocyclo:
+    min-complexity: 30
+
+  maligned:
+    suggest-new: true
+
+  dupl:
+    # tokens count to trigger issue, 150 by default
+    threshold: 100
+
+  goconst:
+    # minimal length of string constant, 3 by default
+    min-len: 3
+    # minimal occurrences count to trigger, 3 by default
+    min-occurrences: 5
+
+  lll:
+    tab-width: 1
+
+  unparam:
+    check-exported: false
+
+  nakedret:
+    max-func-lines: 60
+
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+
+  gocritic:
+    enabled-tags:
+      - performance
+
+    settings:
+      captLocal:
+        paramsOnly: true
+      rangeValCopy:
+        sizeThreshold: 32
+
+  nolintlint:
+    require-explanation: true
+    require-specific: true
+
+
+linters:
+  disable-all: true
+  enable:
+    - dupl
+    - errcheck
+    - copyloopvar
+    - ginkgolinter
+    - goconst
+    - gocyclo
+    - gofmt
+    - goimports
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+
+  presets:
+    - bugs
+    - unused
+  fast: false
+
+
+issues:
+  exclude-rules:
+    - path: _test(ing)?\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - scopelint
+        - unparam
+        - revive
+
+    - path: _test\.go
+      text: "(unnamedResult|exitAfterDefer)"
+      linters:
+        - gocritic
+
+    - text: "(hugeParam|rangeValCopy):"
+      linters:
+        - gocritic
+
+    - text: "SA3000:"
+      linters:
+        - staticcheck
+
+    - text: "k8s.io/api/core/v1"
+      linters:
+        - goimports
+
+    - text: "G101:"
+      linters:
+        - gosec
+        - gas
+
+    - text: "G104:"
+      linters:
+        - gosec
+        - gas
+
+    - path: k8s.io/
+      linters:
+        - musttag
+
+  exclude-use-default: false
+  new: false
+  max-per-linter: 0
+  max-same-issues: 0

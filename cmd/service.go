@@ -18,14 +18,14 @@ var (
 var serviceCmd = &cobra.Command{
 	Use:     "service",
 	Aliases: []string{"s", "serve", "standalone", "server"},
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		loadViperVariables(cmd)
 		logger = logger.With("mode", "service")
 		logger.Info("spawning...")
 
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		logger.Debug("creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithWebhookSecret(webhookSecret),

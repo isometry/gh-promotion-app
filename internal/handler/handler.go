@@ -1,3 +1,4 @@
+// Package handler provides a generic interface for processing requests using a list of processors.
 package handler
 
 import (
@@ -12,8 +13,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Option is a functional option for the handler
 type Option func(*Handler)
 
+// Handler is the main handler for the promotion app
 type Handler struct {
 	githubController *controllers.GitHub
 	awsController    *controllers.AWS
@@ -31,6 +34,7 @@ type Handler struct {
 	webhookSecret     *validation.WebhookSecret
 }
 
+// NewPromotionHandler creates a new promotion handler instance
 func NewPromotionHandler(options ...Option) (*Handler, error) {
 	_inst := &Handler{
 		logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
@@ -79,7 +83,6 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 	_inst.postProcessors = []processor.Processor{
 		processor.NewFastForwarderPostProcessor(_inst.githubController),
 		processor.NewS3UploaderPostProcessor(_inst.awsController),
-		processor.NewRateLimitsPostProcessor(_inst.githubController),
 	}
 
 	return _inst, err
@@ -146,6 +149,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (bus *promotio
 	return bus, nil
 }
 
+// GetLambdaPayloadType returns the lambda payload type
 func (h *Handler) GetLambdaPayloadType() string {
 	return h.lambdaPayloadType
 }

@@ -90,12 +90,6 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS"),
 		Default:     helpers.Ptr(true),
 	},
-	&capabilities.Global.FetchRateLimits: {
-		Name:        "fetch-rate-limits",
-		Description: "Enable per-event fetching of rate limits and corresponding logs decoration",
-		Env:         helpers.Ptr("FETCH_RATE_LIMITS"),
-		Default:     helpers.Ptr(true),
-	},
 	&capabilities.Global.S3.Upload.Enabled: {
 		Name:        "promotion-report-s3-upload",
 		Description: "Enable S3 upload of promotion reports",

@@ -14,14 +14,15 @@ type pullRequestReviewEventProcessor struct {
 	githubController *controllers.GitHub
 }
 
-func (p *pullRequestReviewEventProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:pull_request_review")
-}
-
+// NewPullRequestReviewEventProcessor initializes a Processor for handling pull request review events with optional configurations.
 func NewPullRequestReviewEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &pullRequestReviewEventProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
+}
+
+func (p *pullRequestReviewEventProcessor) SetLogger(logger *slog.Logger) {
+	p.logger = logger.WithGroup("processor:pull_request_review")
 }
 
 func (p *pullRequestReviewEventProcessor) Process(req any) (bus *promotion.Bus, err error) {

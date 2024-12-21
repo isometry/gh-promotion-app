@@ -15,8 +15,9 @@ type fastForwarderPostProcessor struct {
 	githubController *controllers.GitHub
 }
 
+// NewFastForwarderPostProcessor constructs a Processor instance for handling GitHub status events with optional configurations.
 func NewFastForwarderPostProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
-	_inst := &authValidatorProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
+	_inst := &fastForwarderPostProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
 }

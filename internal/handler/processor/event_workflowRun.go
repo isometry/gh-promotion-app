@@ -14,6 +14,7 @@ type workflowRunProcessor struct {
 	githubController *controllers.GitHub
 }
 
+// NewWorkflowRunEventProcessor initializes a Processor for handling workflow run events with optional configurations.
 func NewWorkflowRunEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
 	_inst := &workflowRunProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
