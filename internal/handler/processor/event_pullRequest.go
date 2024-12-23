@@ -15,7 +15,7 @@ type pullRequestEventProcessor struct {
 }
 
 func (p *pullRequestEventProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:pull_request")
+	p.logger = logger.WithGroup("processor:pull-request")
 }
 
 // NewPullRequestEventProcessor creates and returns a Processor to handle pull request events, initialized with given GitHub controller and options.

@@ -25,7 +25,7 @@ func NewPushEventProcessor(githubController *controllers.GitHub, opts ...Option)
 }
 
 func (p *pushEventProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:push_event")
+	p.logger = logger.WithGroup("processor:push")
 }
 
 func (p *pushEventProcessor) Process(req any) (bus *promotion.Bus, err error) {

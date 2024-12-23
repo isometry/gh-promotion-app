@@ -23,7 +23,7 @@ func NewCheckSuiteEventProcessor(githubController *controllers.GitHub, opts ...O
 }
 
 func (p *checkSuiteEventProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:check_suite")
+	p.logger = logger.WithGroup("processor:check-suite")
 }
 
 func (p *checkSuiteEventProcessor) Process(req any) (bus *promotion.Bus, err error) {

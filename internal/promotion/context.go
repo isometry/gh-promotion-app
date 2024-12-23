@@ -2,6 +2,7 @@
 package promotion
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/google/go-github/v67/github"
@@ -49,7 +50,7 @@ type Context struct {
 // It dynamically includes optional attributes such as head SHA, head reference, and base reference if they are not nil.
 func (p *Context) LogValue() slog.Value {
 	logAttr := make([]slog.Attr, 1, 6)
-	logAttr[0] = slog.Any("eventType", p.EventType)
+	logAttr[0] = slog.Any("eventType", fmt.Sprintf("%T", p.EventType))
 	if p.Owner != nil {
 		logAttr = append(logAttr, slog.String("owner", helpers.String(p.Owner)))
 	}

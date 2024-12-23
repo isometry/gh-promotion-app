@@ -37,12 +37,11 @@ var serviceCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
 		logger.Debug("creating runtime...")
 		runtime := runtime.NewRuntime(hdl,
 			runtime.WithLogger(logger.With("component", "runtime")))
 
-		logger.Debug("creating HTTP server...")
+		logger.With("path", svcHostPath).Debug("creating HTTP server...")
 		h := http.NewServeMux()
 		h.HandleFunc(svcHostPath, runtime.ServeHTTP)
 
@@ -54,7 +53,9 @@ var serviceCmd = &cobra.Command{
 			IdleTimeout:  svcIoTimeout,
 		}
 
-		logger.Info("serving...", "address", s.Addr, "path", svcHostPath, "timeout", svcIoTimeout.String())
+		logger.Info("serving...",
+			"address", s.Addr, "path", svcHostPath, "timeout", svcIoTimeout.String(), "authMode", githubAuthMode,
+		)
 		return s.ListenAndServe()
 	},
 }

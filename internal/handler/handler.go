@@ -95,8 +95,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (bus *promotio
 	// Authenticate & Validate
 	authValidatorProcessor := processor.NewAuthValidatorProcessor(h.githubController)
 	bus, err = processor.Process(logger, &processor.AuthRequest{
-		Body:    body,
-		Headers: headers,
+		Body:            body,
+		Headers:         headers,
+		EventProcessors: h.processors,
 	}, authValidatorProcessor)
 	if err != nil {
 		logger.Error("failed to authenticate request", slog.Any("error", err))
@@ -110,9 +111,9 @@ func (h *Handler) Process(body []byte, headers map[string]string) (bus *promotio
 		return
 	}
 
-	logger = logger.With(slog.Any("context", bus.Context))
-
 	// Processors
+	logger = logger.With(slog.Any("context", bus.Context))
+	logger.Info("processing event...")
 	eventProcessors := h.processors[bus.EventType]
 	if len(eventProcessors) == 0 {
 		logger.Error("no processors found for event type")

@@ -24,7 +24,7 @@ func NewS3UploaderPostProcessor(awsController *controllers.AWS, opts ...Option) 
 }
 
 func (p *s3UploaderPostProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("pre-processor:validator")
+	p.logger = logger.WithGroup("post-processor:s3-uploader")
 }
 
 func (p *s3UploaderPostProcessor) Process(req any) (bus *promotion.Bus, err error) {

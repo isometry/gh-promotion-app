@@ -42,14 +42,13 @@ func (p *statusProcessor) Process(req any) (bus *promotion.Bus, err error) {
 	}
 
 	p.logger.Debug("processing status event...")
+	bus.Context.HeadSHA = e.SHA
 
 	state := *e.State
 	if state != "success" {
 		p.logger.Info("ignoring non-success status event with unprocessable status event state...", slog.String("state", state))
 		return bus, nil
 	}
-
-	bus.Context.HeadSHA = e.SHA
 
 	return bus, nil
 }

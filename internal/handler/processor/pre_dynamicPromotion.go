@@ -22,7 +22,7 @@ func NewDynamicPromotionPreProcessor(githubController *controllers.GitHub, opts 
 }
 
 func (p *dynamicPromotionProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("pre-processor:validator")
+	p.logger = logger.WithGroup("pre-processor:dynamic-promotion")
 }
 
 func (p *dynamicPromotionProcessor) Process(req any) (bus *promotion.Bus, err error) {

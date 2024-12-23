@@ -9,7 +9,7 @@ import (
 var svcEnvMapString = map[*string]boundEnvVar[string]{
 	&svcHostAddr: {
 		Name:        "addr",
-		Description: "The address to serve the service on (default all interfaces in dual-stack runtimeMode)",
+		Description: "The address to serve the service on (default all interfaces in dual-stack mode)",
 		Short:       helpers.Ptr("H"),
 		Default:     helpers.Ptr(""),
 	},
@@ -20,8 +20,8 @@ var svcEnvMapString = map[*string]boundEnvVar[string]{
 		Default:     helpers.Ptr("8080"),
 	},
 	&svcHostPath: {
-		Name:        "path",
-		Description: "The path to serve the service on",
+		Name:        "host-path",
+		Description: "The host-path to serve the service on",
 		Short:       helpers.Ptr("P"),
 		Default:     helpers.Ptr("/"),
 	},

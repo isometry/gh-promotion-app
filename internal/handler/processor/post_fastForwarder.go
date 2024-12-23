@@ -23,7 +23,7 @@ func NewFastForwarderPostProcessor(githubController *controllers.GitHub, opts ..
 }
 
 func (p *fastForwarderPostProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("pre-processor:validator")
+	p.logger = logger.WithGroup("post-processor:fast-forwarder")
 }
 
 func (p *fastForwarderPostProcessor) Process(req any) (bus *promotion.Bus, err error) {
@@ -37,7 +37,7 @@ func (p *fastForwarderPostProcessor) Process(req any) (bus *promotion.Bus, err e
 	if bus.Context.BaseRef == nil || bus.Context.HeadRef == nil {
 		// find matching promotion request by head SHA and populate missing refs
 		if bus.Context.PullRequest, err = p.githubController.FindPullRequest(bus.Context); err != nil {
-			p.logger.Error("failed to find promotion request", slog.Any("error", err), slog.String("headRef", *bus.Context.HeadRef), slog.String("headSHA", *bus.Context.HeadSHA))
+			p.logger.Error("failed to find promotion request", slog.Any("error", err))
 			return bus, nil
 		}
 	}

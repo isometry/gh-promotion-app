@@ -22,7 +22,7 @@ func NewDeploymentStatusEventProcessor(githubController *controllers.GitHub, opt
 }
 
 func (p *deploymentStatusProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:pull_request_review")
+	p.logger = logger.WithGroup("processor:deployment-status")
 }
 
 func (p *deploymentStatusProcessor) Process(req any) (bus *promotion.Bus, err error) {

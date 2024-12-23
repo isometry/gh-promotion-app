@@ -133,17 +133,23 @@ func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
 		clientV3 *github.Client
 		clientV4 *githubv4.Client
 	)
-	switch {
-	case g.Token != "":
+	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
+	case "token":
 		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
 		roundTripper := &loggingRoundTripper{logger: g.logger}
-		clientV3 = github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
 		src := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: g.Token},
 		)
 		httpClient := oauth2.NewClient(g.ctx, src)
-		clientV4 = githubv4.NewClient(httpClient)
-	case g.PrivateKey != "" && g.AppID != 0:
+		v3rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(roundTripper)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create rate limiter GitHub client")
+		}
+		v4rateLimiter, _ := github_ratelimit.NewRateLimitWaiterClient(httpClient.Transport)
+
+		clientV3 = github.NewClient(v3rateLimiter).WithAuthToken(g.Token)
+		clientV4 = githubv4.NewClient(v4rateLimiter)
+	case "ssm":
 		g.logger.Debug("Spawning credentials using GitHub App credentials from SSM...")
 		roundTripper := &loggingRoundTripper{logger: g.logger}
 		transport, err := ghinstallation.New(roundTripper, g.AppID, *installationID, []byte(g.PrivateKey))
@@ -166,7 +172,7 @@ func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
 		V3:             clientV3,
 		V4:             clientV4,
 	}
-	g.logger.Debug("successfully cached spawned clients...", slog.Int64("installationId", *installationID))
+	g.logger.Debug("successfully cached spawned clients...", slog.Int64("installationID", *installationID))
 	return _clientCache[*installationID], nil
 }
 
@@ -251,6 +257,7 @@ func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, 
 		return nil, err
 	}
 
+	g.logger.Debug("Attempting to find matching promotion request...")
 	for _, pr := range prs {
 		if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
 			g.logger.Info("found matching promotion request...", slog.String("pr", *pr.URL))

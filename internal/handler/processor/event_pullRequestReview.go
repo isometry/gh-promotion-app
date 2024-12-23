@@ -22,7 +22,7 @@ func NewPullRequestReviewEventProcessor(githubController *controllers.GitHub, op
 }
 
 func (p *pullRequestReviewEventProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:pull_request_review")
+	p.logger = logger.WithGroup("processor:pull-request-review")
 }
 
 func (p *pullRequestReviewEventProcessor) Process(req any) (bus *promotion.Bus, err error) {

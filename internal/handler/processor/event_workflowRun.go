@@ -22,7 +22,7 @@ func NewWorkflowRunEventProcessor(githubController *controllers.GitHub, opts ...
 }
 
 func (p *workflowRunProcessor) SetLogger(logger *slog.Logger) {
-	p.logger = logger.WithGroup("processor:workflow_run")
+	p.logger = logger.WithGroup("processor:workflow-run")
 }
 
 func (p *workflowRunProcessor) Process(req any) (bus *promotion.Bus, err error) {
