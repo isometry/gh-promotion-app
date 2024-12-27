@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v66/github"
+	"github.com/gofri/go-github-ratelimit/github_ratelimit"
+	"github.com/google/go-github/v67/github"
+	"github.com/isometry/gh-promotion-app/internal/capabilities"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
@@ -23,14 +25,18 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type EventInstallationId struct {
+// EventInstallationID represents an event payload containing an installation ID.
+// It embeds the installation details with its respective ID.
+type EventInstallationID struct {
 	Installation struct {
 		ID *int64 `json:"id"`
 	} `json:"installation"`
 }
 
+// GHOption is a functional option used to configure or modify the properties of a GitHub instance.
 type GHOption func(*GitHub)
 
+// NewGitHubController initializes a new GitHub controller with the provided options, setting defaults where necessary.
 func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 	_inst := new(GitHub)
 	for _, opt := range opts {
@@ -48,14 +54,15 @@ func NewGitHubController(opts ...GHOption) (*GitHub, error) {
 
 // Client - cache struct holding an entry for each installation ID
 type Client struct {
-	installationId int64
+	installationID int64
 	V3             *github.Client
 	V4             *githubv4.Client
 }
 
 // _clientCache - cache of GitHub clients
-var _clientCache map[int64]*Client = make(map[int64]*Client)
+var _clientCache = make(map[int64]*Client)
 
+// GitHub encapsulates GitHub-related operations and credentials management for various authentication modes.
 type GitHub struct {
 	Credentials
 
@@ -68,7 +75,7 @@ type GitHub struct {
 
 // Credentials is a helper struct to hold the GitHub credentials
 type Credentials struct {
-	AppId         int64                     `json:"app_id,omitempty"`
+	AppID         int64                     `json:"app_id,omitempty"`
 	PrivateKey    string                    `json:"private_key,omitempty"`
 	WebhookSecret *validation.WebhookSecret `json:"webhook_secret"`
 	Token         string                    `json:"token,omitempty"`
@@ -83,7 +90,7 @@ func (g *GitHub) RetrieveCredentials() error {
 		}
 		return nil
 	case "ssm":
-		if g.WebhookSecret != nil && g.AppId != 0 && g.PrivateKey != "" {
+		if g.WebhookSecret != nil && g.AppID != 0 && g.PrivateKey != "" {
 			g.logger.Debug("using cached GitHub App credentials...")
 			return nil
 		}
@@ -105,58 +112,71 @@ func (g *GitHub) RetrieveCredentials() error {
 
 // GetGitHubClients returns a GitHub client for the given installation ID or token
 func (g *GitHub) GetGitHubClients(body []byte) (*Client, error) {
-	var eventInstallationId EventInstallationId
-	if err := json.Unmarshal(body, &eventInstallationId); err != nil {
-		return nil, fmt.Errorf("no installation ID found. error: %v", err)
+	var eventInstallationID EventInstallationID
+	if err := json.Unmarshal(body, &eventInstallationID); err != nil {
+		return nil, fmt.Errorf("no installation ID found. error: %w", err)
 	}
 
 	// Cache hit
-	installationId := eventInstallationId.Installation.ID
-	if client, ok := _clientCache[*installationId]; ok {
-		g.logger.Debug("cache hit. using cached client...", slog.Int64("installationId", *installationId))
+	installationID := eventInstallationID.Installation.ID
+	if installationID == nil {
+		return nil, fmt.Errorf("no installation ID found")
+	}
+	if client, ok := _clientCache[*installationID]; ok {
+		g.logger.Debug("cache hit. using cached client...", slog.Int64("installationId", *installationID))
 		return client, nil
 	}
 
 	// Cache miss
-	g.logger.Debug("cache miss. spawning clients...", slog.Int64("installationId", *installationId))
+	g.logger.Debug("cache miss. spawning clients...", slog.Int64("installationId", *installationID))
 	var (
 		clientV3 *github.Client
 		clientV4 *githubv4.Client
 	)
-	switch {
-	case g.Token != "":
+	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
+	case "token":
 		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
 		roundTripper := &loggingRoundTripper{logger: g.logger}
-		clientV3 = github.NewClient(&http.Client{Transport: roundTripper}).WithAuthToken(g.Token)
 		src := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: g.Token},
 		)
 		httpClient := oauth2.NewClient(g.ctx, src)
-		clientV4 = githubv4.NewClient(httpClient)
-	case g.PrivateKey != "" && g.AppId != 0 && installationId != nil:
+		v3rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(roundTripper)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create rate limiter GitHub client")
+		}
+		v4rateLimiter, _ := github_ratelimit.NewRateLimitWaiterClient(httpClient.Transport)
+
+		clientV3 = github.NewClient(v3rateLimiter).WithAuthToken(g.Token)
+		clientV4 = githubv4.NewClient(v4rateLimiter)
+	case "ssm":
 		g.logger.Debug("Spawning credentials using GitHub App credentials from SSM...")
 		roundTripper := &loggingRoundTripper{logger: g.logger}
-		transport, err := ghinstallation.New(roundTripper, g.AppId, *installationId, []byte(g.PrivateKey))
+		transport, err := ghinstallation.New(roundTripper, g.AppID, *installationID, []byte(g.PrivateKey))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create installation transport")
 		}
 
-		authTransport := &http.Client{Transport: transport}
-		clientV3 = github.NewClient(authTransport)
-		clientV4 = githubv4.NewClient(authTransport)
+		rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(transport)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create rate limiter GitHub client")
+		}
+		clientV3 = github.NewClient(rateLimiter)
+		clientV4 = githubv4.NewClient(rateLimiter)
 	default:
 		return nil, fmt.Errorf("no valid credentials found")
 	}
 	// Persist cache entry
-	_clientCache[*installationId] = &Client{
-		installationId: *installationId,
+	_clientCache[*installationID] = &Client{
+		installationID: *installationID,
 		V3:             clientV3,
 		V4:             clientV4,
 	}
-	g.logger.Debug("successfully cached spawned clients...", slog.Int64("installationId", *installationId))
-	return _clientCache[*installationId], nil
+	g.logger.Debug("successfully cached spawned clients...", slog.Int64("installationID", *installationID))
+	return _clientCache[*installationID], nil
 }
 
+// ValidateWebhookSecret verifies the webhook secret against the signature in the provided headers for security validation.
 func (g *GitHub) ValidateWebhookSecret(secret []byte, headers map[string]string) error {
 	return g.WebhookSecret.ValidateSignature(secret, headers)
 }
@@ -237,6 +257,7 @@ func (g *GitHub) FindPullRequest(pCtx *promotion.Context) (*github.PullRequest, 
 		return nil, err
 	}
 
+	g.logger.Debug("Attempting to find matching promotion request...")
 	for _, pr := range prs {
 		if *pr.Head.SHA == *pCtx.HeadSHA && pCtx.Promoter.IsPromotionRequest(pr) {
 			g.logger.Info("found matching promotion request...", slog.String("pr", *pr.URL))
@@ -285,23 +306,33 @@ func (g *GitHub) FastForwardRefToSha(pCtx *promotion.Context) error {
 	return nil
 }
 
+// CommitStatus is a type to represent the commit status
 type CommitStatus = string
 
 const (
+	// CommitStatusSuccess represents a successful state for a commit status, often used to indicate successful operations.
 	CommitStatusSuccess CommitStatus = "success"
-	CommitStatusFailure              = "failure"
-	CommitStatusError                = "error"
-	CommitStatusPending              = "pending"
+	// CommitStatusFailure represents a failed state for a commit status, typically used to indicate unsuccessful operations.
+	CommitStatusFailure CommitStatus = "failure"
+	// CommitStatusError represents an error state for a commit status, used to indicate critical issues in operations.
+	CommitStatusError CommitStatus = "error"
+	// CommitStatusPending represents a pending state for a commit status, typically used to indicate ongoing operations.
+	CommitStatusPending CommitStatus = "pending"
 )
 
 // SendPromotionFeedbackCommitStatus sends a commit status to the head commit of the promotion request
-func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResult *promotion.Result, promotionError error, commitStatus CommitStatus) error {
-	// Validate required fields
-	if promotionResult == nil {
-		return fmt.Errorf("promotion result is nil")
+func (g *GitHub) SendPromotionFeedbackCommitStatus(bus *promotion.Bus, promotionError error, commitStatus CommitStatus) error {
+	if !capabilities.Promotion.Feedback.Enabled {
+		g.logger.Debug("promotion feedback is disabled")
+		return nil
 	}
 
-	pCtx := promotionResult.Context
+	// Validate required fields
+	if bus == nil {
+		return fmt.Errorf("promotion bus is nil")
+	}
+
+	pCtx := bus.Context
 	feedbackLogger := pCtx.Logger.WithGroup("feedback:commit-status")
 	// Skip if the context is missing required fields
 	if pCtx.Owner == nil || pCtx.Repository == nil || pCtx.HeadSHA == nil {
@@ -310,26 +341,27 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResu
 		return nil
 	}
 
+	// Ignore if the context is missing the pull request reference
 	if pCtx.PullRequest == nil {
 		feedbackLogger.Debug("ignoring promotion feedback commit status due to missing PullRequest reference",
 			slog.Any("context", pCtx))
 		return nil
 	}
 
-	// Support placeholders
-	contextSubstitution := make(map[string]string)
-	if pCtx.HeadRef != nil && pCtx.BaseRef != nil {
-		contextSubstitution["{source}"] = helpers.ExtractRefFromFullRef(*pCtx.HeadRef)
-		contextSubstitution["{target}"] = helpers.ExtractRefFromFullRef(*pCtx.BaseRef)
-
-		for k, v := range contextSubstitution {
-			context = strings.ReplaceAll(context, k, v)
-		}
-	}
-
-	// Infer the commit status from the provided promotion.Result and error
+	// Infer the commit status from the provided promotion.Bus and error
 	stages, index := pCtx.Promoter.Stages, pCtx.Promoter.StageIndex(*pCtx.HeadRef)
 	progress := fmt.Sprintf("%d/%d", index+1, len(stages))
+
+	// Local placeholders
+	placeholders := map[string]string{
+		"{progress}":  progress,
+		"{timestamp}": time.Now().Format(time.RFC3339),
+	}
+	contextValue := capabilities.Promotion.Feedback.Context
+	if pCtx.HeadRef != nil && pCtx.BaseRef != nil {
+		placeholders["{source}"] = helpers.ExtractRefFromFullRef(*pCtx.HeadRef)
+		placeholders["{target}"] = helpers.ExtractRefFromFullRef(*pCtx.BaseRef)
+	}
 
 	// Truncate error (140 max length) -40 lines to allow decoration
 	promotionErrorTruncated := helpers.Truncate(fmt.Sprintf("%v", promotionError), 100)
@@ -338,32 +370,35 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResu
 	var msg string
 	switch commitStatus {
 	case CommitStatusSuccess:
-		msg = "✅ {progress} @ {rfc3339-timestamp}"
+		msg = "✅ {progress} @ {timestamp}"
 	case CommitStatusFailure:
-		msg = fmt.Sprintf("❌ %v @ {rfc3339-timestamp}", promotionErrorTruncated)
+		msg = fmt.Sprintf("❌ %v @ {timestamp}", promotionErrorTruncated)
 	case CommitStatusError:
-		msg = fmt.Sprintf("💥 %v @ {rfc3339-timestamp}", promotionErrorTruncated)
+		msg = fmt.Sprintf("💥 %v @ {timestamp}", promotionErrorTruncated)
 	case CommitStatusPending:
-		msg = "⏳ {progress} @ {rfc3339-timestamp}"
+		msg = "⏳ {progress} @ {timestamp}"
 	default:
 		return fmt.Errorf("unknown commit status: %s", commitStatus)
 	}
 
-	// Placeholders
-	rfc3339 := time.Now().UTC().Format(time.RFC3339)
+	// Replace placeholders
+	for k, v := range placeholders {
+		msg = strings.ReplaceAll(msg, k, v)
+		contextValue = strings.ReplaceAll(contextValue, k, v)
+	}
 
-	msg = strings.ReplaceAll(msg, "{progress}", progress)
-	msg = strings.ReplaceAll(msg, "{rfc3339-timestamp}", rfc3339)
+	// Truncate (140 max length)
+	msg = helpers.Truncate(msg, 140)
 
 	status := &github.RepoStatus{
 		Description: github.String(msg),
-		Context:     github.String(context),
+		Context:     github.String(contextValue),
 		State:       github.String(commitStatus),
 		TargetURL:   pCtx.PullRequest.HTMLURL,
 	}
 
 	feedbackLogger.Debug("sending commit status",
-		slog.String("status", commitStatus), slog.String("context", context), slog.String("msg", msg),
+		slog.String("status", commitStatus), slog.String("context", contextValue), slog.String("msg", msg),
 		slog.String("eventType", fmt.Sprintf("%T", pCtx.EventType)), slog.Any("promotionError", promotionError))
 	_, resp, err := pCtx.ClientV3.Repositories.CreateStatus(g.ctx, *pCtx.Owner, *pCtx.Repository, *pCtx.HeadSHA, status)
 
@@ -380,23 +415,15 @@ func (g *GitHub) SendPromotionFeedbackCommitStatus(context string, promotionResu
 	return nil
 }
 
-// RateLimits fetches the rate limits for the currently authenticated identity
-func (g *GitHub) RateLimits(clt *github.Client) (*github.RateLimits, error) {
-	rate, _, err := clt.RateLimit.Get(g.ctx)
-	if err != nil {
-		g.logger.Error("failed to fetch rate limits", slog.Any("error", err))
-		return nil, err
-	}
-
-	return rate, nil
-}
-
+// CommitOnBranchRequest is a request to create a commit on a branch
 type CommitOnBranchRequest struct {
 	Owner, Repository, Branch, Message string
 }
 
-// EmptyCommitOnBranch creates an empty commit on a branch
-func (g *GitHub) EmptyCommitOnBranch(clients *Client, ctx context.Context, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
+// EmptyCommitOnBranch creates an empty commit on a specific branch in a GitHub repository using GraphQL mutation.
+// It validates the current branch head and updates the expected head OID in the mutation input for consistency.
+// Returns the OID of the newly created commit on success or an error on failure.
+func (g *GitHub) EmptyCommitOnBranch(ctx context.Context, clients *Client, createCommitOnBranchInput githubv4.CreateCommitOnBranchInput) (string, error) {
 	// Fetch the current head commit of the branch
 	var query struct {
 		Repository struct {
@@ -424,7 +451,7 @@ func (g *GitHub) EmptyCommitOnBranch(clients *Client, ctx context.Context, creat
 		CreateCommitOnBranch struct {
 			Commit struct {
 				Oid githubv4.GitObjectID
-				Url githubv4.String
+				URL githubv4.String
 			}
 		} `graphql:"createCommitOnBranch(input: $input)"`
 	}
@@ -445,7 +472,7 @@ func GitHubEmptyCommitOnBranchWithDefaultClient(ctx context.Context, req githubv
 	if clients, err = ctl.GetGitHubClients(nil); err != nil {
 		return "", err
 	}
-	return ctl.EmptyCommitOnBranch(clients, ctx, req)
+	return ctl.EmptyCommitOnBranch(ctx, clients, req)
 }
 
 // RequestTitle generates a title for a promotion request
@@ -473,6 +500,10 @@ func (l *loggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	_ = json.NewDecoder(&buf).Decode(&container)
 	l.logger.Log(req.Context(), slog.Level(-8), "sending request", slog.String("method", req.Method), slog.String("url", req.URL.String()), slog.Any("body", container))
 	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		l.logger.Log(req.Context(), slog.Level(-8), "failed to send request", slog.Any("error", err))
+		return nil, err
+	}
 	l.logger.Log(req.Context(), slog.Level(-8), "received response", slog.Any("status", resp.Status), slog.Any("error", err))
 	return resp, err
 }

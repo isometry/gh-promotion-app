@@ -17,14 +17,14 @@ var (
 var lambdaCmd = &cobra.Command{
 	Use:     "lambda",
 	Aliases: []string{"l", "serverless"},
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		loadViperVariables(cmd)
 		logger = logger.With("mode", "lambda")
 		logger.Info("spawning...")
 
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		logger.Debug("creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithLambdaPayloadType(lambdaPayloadType),
@@ -32,12 +32,6 @@ var lambdaCmd = &cobra.Command{
 			handler.WithSSMKey(githubSSMKey),
 			handler.WithToken(githubToken),
 			handler.WithWebhookSecret(webhookSecret),
-			handler.WithDynamicPromotion(dynamicPromotion),
-			handler.WithDynamicPromotionKey(dynamicPromotionKey),
-			handler.WithFeedbackCommitStatus(feedbackCommitStatus),
-			handler.WithFeedbackCommitStatusContext(feedbackCommitStatusContext),
-			handler.WithCreateTargetRef(createTargetRef),
-			handler.WithFetchRateLimits(fetchRateLimits),
 			handler.WithContext(cmd.Context()),
 			handler.WithLogger(logger.With("component", "promotion-handler")))
 		if err != nil {

@@ -1,3 +1,4 @@
+// Package cmd provides the entrypoint for the gh-promotion-app.
 package cmd
 
 import (
@@ -10,22 +11,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Execute runs the root command, handling command-line arguments and invoking the corresponding functionality.
 func Execute() error {
 	return rootCmd.Execute()
 }
 
 var (
-	// Extensions >
-	dynamicPromotion    bool
-	dynamicPromotionKey string
-	createTargetRef     bool
-
-	feedbackCommitStatus        bool
-	feedbackCommitStatusContext string
-
-	fetchRateLimits bool
-	// />
-
 	runtimeMode    string
 	githubAuthMode string
 	githubToken    string
@@ -45,7 +36,7 @@ type boundEnvVar[T argType] struct {
 }
 
 var rootCmd = &cobra.Command{
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		loadViperVariables(cmd)
 
 		runtimeMode = strings.TrimSpace(runtimeMode)

@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/isometry/gh-promotion-app/internal/capabilities"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -45,17 +47,23 @@ var envMapString = map[*string]boundEnvVar[string]{
 		Name:        "github-webhook-secret",
 		Description: "The secret to use when validating incoming GitHub webhook payloads. If not specified, no validation is performed",
 	},
-	&dynamicPromotionKey: {
+	&capabilities.Promotion.DynamicPromotion.Key: {
 		Name:        "promotion-dynamic-custom-property-key",
 		Description: "The key to use when fetching the dynamic promoter configuration",
 		Env:         helpers.Ptr("DYNAMIC_PROMOTION_KEY"),
 		Default:     helpers.Ptr("gitops-promotion-path"),
 	},
-	&feedbackCommitStatusContext: {
+	&capabilities.Promotion.Feedback.Context: {
 		Name:        "feedback-commit-status-context",
 		Description: "The context key to use when pushing the commit status to the repository. Supported placeholders: {source}, {target}",
 		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS_CONTEXT"),
 		Default:     helpers.Ptr("{source}→{target}"),
+	},
+	&capabilities.Global.S3.Upload.BucketName: {
+		Name:        "promotion-report-s3-upload-bucket",
+		Description: "The S3 bucket to use when uploading promotion reports",
+		Env:         helpers.Ptr("PROMOTION_REPORT_S3_BUCKET"),
+		Default:     helpers.Ptr(os.Getenv("S3_BUCKET_NAME")),
 	},
 }
 
@@ -65,28 +73,27 @@ var envMapBool = map[*bool]boundEnvVar[bool]{
 		Description: "Enable caller trace in logs",
 		Short:       helpers.Ptr("V"),
 	},
-	&dynamicPromotion: {
+	&capabilities.Promotion.DynamicPromotion.Enabled: {
 		Name:        "promotion-dynamic",
 		Description: "Enable dynamic promotion",
 		Env:         helpers.Ptr("DYNAMIC_PROMOTION"),
 	},
-	&createTargetRef: {
+	&capabilities.Promotion.Push.CreateTargetRef: {
 		Name:        "create-missing-target-branches",
 		Description: "Create missing target branches",
 		Env:         helpers.Ptr("CREATE_MISSING_TARGET_BRANCHES"),
 		Default:     helpers.Ptr(true),
 	},
-	&feedbackCommitStatus: {
+	&capabilities.Promotion.Feedback.Enabled: {
 		Name:        "feedback-commit-status",
 		Description: "Enable feedback commit status",
 		Env:         helpers.Ptr("FEEDBACK_COMMIT_STATUS"),
 		Default:     helpers.Ptr(true),
 	},
-	&fetchRateLimits: {
-		Name:        "fetch-rate-limits",
-		Description: "Enable per-event fetching of rate limits and corresponding logs decoration",
-		Env:         helpers.Ptr("FETCH_RATE_LIMITS"),
-		Default:     helpers.Ptr(true),
+	&capabilities.Global.S3.Upload.Enabled: {
+		Name:        "promotion-report-s3-upload",
+		Description: "Enable S3 upload of promotion reports",
+		Env:         helpers.Ptr("PROMOTION_REPORT_S3_UPLOAD"),
 	},
 }
 
@@ -101,7 +108,6 @@ var envMapCount = map[*int]boundEnvVar[int]{
 var replacer = strings.NewReplacer(".", "_", "-", "_")
 
 func bindEnvMap[T argType](cmd *cobra.Command, m map[*T]boundEnvVar[T]) {
-
 	for v, cfg := range m {
 		desc := cfg.Description
 		if cfg.Env != nil {
