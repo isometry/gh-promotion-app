@@ -2,11 +2,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
+	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -17,65 +19,62 @@ func Execute() error {
 }
 
 var (
-	runtimeMode    string
-	githubAuthMode string
-	githubToken    string
-	githubSSMKey   string
-	webhookSecret  string
-
-	logger      *slog.Logger
-	verbosity   int
-	callerTrace bool
+	configFilePath string
+	logger         *slog.Logger
 )
 
 type boundEnvVar[T argType] struct {
 	Name, Description string
 	Env, Short        *string
 	Hidden            bool
-	Default           *T
 }
 
 var rootCmd = &cobra.Command{
-	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-		loadViperVariables(cmd)
-
-		runtimeMode = strings.TrimSpace(runtimeMode)
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		config.Global.Mode = strings.TrimSpace(config.Global.Mode)
 		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			AddSource: callerTrace,
-			Level:     slog.LevelWarn - slog.Level(verbosity*4),
+			AddSource: config.Global.Logging.CallerTrace,
+			Level:     slog.LevelWarn - slog.Level(config.Global.Logging.Verbosity*4),
 		}))
-		return nil
-	},
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		switch runtimeMode {
-		case "service":
-			return serviceCmd.PreRunE(cmd, args)
-		case "lambda":
-			return lambdaCmd.PreRunE(cmd, args)
-		default:
-			return fmt.Errorf("invalid mode: %s", runtimeMode)
-		}
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		switch runtimeMode {
+		switch config.Global.Mode {
 		case "service":
 			return serviceCmd.RunE(cmd, args)
 		case "lambda":
 			return lambdaCmd.RunE(cmd, args)
 		default:
-			return fmt.Errorf("invalid mode: %s", runtimeMode)
+			return fmt.Errorf("invalid mode: %s", config.Global.Mode)
 		}
 	},
 }
 
 func init() {
+	// Root command flags
+	rootCmd.PersistentFlags().StringVarP(&configFilePath, "config", "c", "config.yaml", "path to the configuration file")
+
+	// Configuration loading & defaults
+	if err := errors.Join(
+		config.LoadFromFile(configFilePath),
+		config.SetDefaults(),
+	); err != nil {
+		panic(err)
+	}
+
+	// Dynamic flags
+	setupDynamicFlags()
+
+	// Subcommands
+	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(lambdaCmd)
+}
+
+func setupDynamicFlags() {
 	viper.AutomaticEnv()
 	viper.EnvKeyReplacer(replacer)
 
 	bindEnvMap(rootCmd, envMapString)
 	bindEnvMap(rootCmd, envMapBool)
 	bindEnvMap(rootCmd, envMapCount)
-
-	rootCmd.AddCommand(serviceCmd)
-	rootCmd.AddCommand(lambdaCmd)
+	bindEnvMap(rootCmd, envMapStringSlice)
 }

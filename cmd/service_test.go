@@ -1,19 +1,21 @@
+//go:build test_e2e
+
 package cmd
 
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
-	"github.com/google/go-github/v67/github"
-	"github.com/isometry/gh-promotion-app/internal/controllers"
+	"github.com/google/go-github/v68/github"
+	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/pkg/errors"
@@ -134,7 +136,7 @@ func runTest(t *testing.T, tc testCase, headRef string, level slog.Leveler) *htt
 		defer func() {
 			_ = os.Unsetenv("GITHUB_WEBHOOK_SECRET")
 		}()
-		tc.Headers[github.SHA256SignatureHeader] = fmt.Sprintf("sha256=%s", generateHmacSha256(payload, dummyWebhookKey))
+		tc.Headers[github.SHA256SignatureHeader] = "sha256=%s" + generateHmacSha256(payload, dummyWebhookKey)
 	}
 	rtm := setupRuntime(t, tc, level)
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
@@ -143,7 +145,7 @@ func runTest(t *testing.T, tc testCase, headRef string, level slog.Leveler) *htt
 	}
 
 	rr := httptest.NewRecorder()
-	rtm.ServeHTTP(rr, req)
+	rtm.Service(rr, req)
 
 	return rr
 }
@@ -167,7 +169,7 @@ func setupRuntime(t *testing.T, tc testCase, level slog.Leveler) *runtime.Runtim
 }
 
 func createEmptyCommit(level slog.Leveler) (string, error) {
-	ref, err := controllers.GitHubEmptyCommitOnBranchWithDefaultClient(
+	ref, err := internalGitHub.EmptyCommitOnBranchWithDefaultClient(
 		context.Background(), githubv4.CreateCommitOnBranchInput{
 			Branch: githubv4.CommittableBranch{
 				RepositoryNameWithOwner: githubv4.NewString(githubv4.String(testRepository)),
@@ -180,11 +182,11 @@ func createEmptyCommit(level slog.Leveler) (string, error) {
 				Additions: nil,
 			},
 		},
-		controllers.WithLogger(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		internalGitHub.WithLogger(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			Level: level,
 		}))),
-		controllers.WithAuthMode("token"),
-		controllers.WithToken(os.Getenv("GITHUB_TOKEN")))
+		internalGitHub.WithAuthMode("token"),
+		internalGitHub.WithToken(os.Getenv("GITHUB_TOKEN")))
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create empty commit")
 	}

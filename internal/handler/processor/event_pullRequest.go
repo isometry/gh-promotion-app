@@ -3,45 +3,53 @@ package processor
 import (
 	"log/slog"
 
-	"github.com/google/go-github/v67/github"
-	"github.com/isometry/gh-promotion-app/internal/controllers"
+	"github.com/google/go-github/v68/github"
+	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
+	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
 
 type pullRequestEventProcessor struct {
 	logger           *slog.Logger
-	githubController *controllers.GitHub
+	githubController *internalGitHub.Controller
 }
 
 func (p *pullRequestEventProcessor) SetLogger(logger *slog.Logger) {
 	p.logger = logger.WithGroup("processor:pull-request")
 }
 
-// NewPullRequestEventProcessor creates and returns a Processor to handle pull request events, initialized with given GitHub controller and options.
-func NewPullRequestEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
+// NewPullRequestEventProcessor creates and returns a Processor to handle pull request events, initialized with given Controller controller and options.
+func NewPullRequestEventProcessor(githubController *internalGitHub.Controller, opts ...Option) Processor {
 	_inst := &pullRequestEventProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
 }
 
 func (p *pullRequestEventProcessor) Process(req any) (bus *promotion.Bus, err error) {
+	p.logger.Debug("processing pull request event...")
+
 	if p.githubController == nil {
 		return nil, promotion.NewInternalError("githubController is nil")
 	}
 	parsedBus, ok := req.(*promotion.Bus)
 	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *promotion.Bus got %T", req)
+		return nil, promotion.NewInternalErrorf("invalid event type. expected *promotion.Bus got %T", req)
 	}
 	bus = parsedBus
-	event := parsedBus.Event
+	evt := parsedBus.Event
 
-	e, ok := event.(*github.PullRequestEvent)
-	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *github.PullRequestEvent got %T", event)
+	if !event.IsEnabled(event.PullRequest) {
+		p.logger.Debug("pull_request event is not enabled. skipping...")
+		bus.EventStatus = promotion.Skipped
+		return bus, nil
 	}
 
-	p.logger.Debug("processing pull request event...")
+	e, ok := evt.(*github.PullRequestEvent)
+	if !ok {
+		return nil, promotion.NewInternalErrorf("invalid event type. expected *github.PullRequestEvent got %T", evt)
+	}
+
 	bus.Context.BaseRef = helpers.NormaliseRefPtr(*e.PullRequest.Base.Ref)
 	bus.Context.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 	bus.Context.HeadSHA = e.PullRequest.Head.SHA
@@ -52,23 +60,20 @@ func (p *pullRequestEventProcessor) Process(req any) (bus *promotion.Bus, err er
 		if e.PullRequest.GetMerged() {
 			p.logger.Debug("processing pull request closed and merged...")
 			// send feedback commit status: success
-			if statusErr := p.githubController.SendPromotionFeedbackCommitStatus(bus, nil, controllers.CommitStatusSuccess); statusErr != nil {
-				p.logger.Error("failed to send feedback commit status", slog.Any("error", statusErr))
-			}
+			bus.EventStatus = promotion.Success
 		}
+		bus.EventStatus = promotion.Skipped
 		return bus, nil
 	case "opened":
-		// send feedback commit status: pending
-		if statusErr := p.githubController.SendPromotionFeedbackCommitStatus(bus, nil, controllers.CommitStatusPending); statusErr != nil {
-			p.logger.Error("failed to send feedback commit status", slog.Any("error", statusErr))
-		}
-		fallthrough
+		bus.EventStatus = promotion.Pending
+		return bus, nil
 	case "edited", "ready_for_review", "reopened", "unlocked":
-		// pass
 		p.logger.Info("ignoring pull request event...")
+		bus.EventStatus = promotion.Skipped
 		return bus, nil
 	default:
 		p.logger.Info("ignoring pull request with unprocessable event...", slog.String("action", *e.Action))
+		bus.EventStatus = promotion.Skipped
 		return bus, nil
 	}
 }

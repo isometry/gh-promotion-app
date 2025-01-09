@@ -78,7 +78,7 @@ func TestNewHttpResponse(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			rw := httptest.NewRecorder()
 
-			helpers.RespondHTTP(tc.Response, tc.Error, rw)
+			helpers.RespondHTTP(rw, tc.Response, tc.Error)
 
 			assert.Equal(t, tc.Expected.StatusCode, rw.Code)
 			assert.Equal(t, tc.Expected.Header, rw.Header().Get("Content-Type"))
