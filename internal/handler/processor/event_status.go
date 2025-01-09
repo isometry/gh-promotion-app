@@ -3,19 +3,20 @@ package processor
 import (
 	"log/slog"
 
-	"github.com/google/go-github/v67/github"
-	"github.com/isometry/gh-promotion-app/internal/controllers"
+	"github.com/google/go-github/v68/github"
+	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
+	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
 
 type statusProcessor struct {
 	logger           *slog.Logger
-	githubController *controllers.GitHub
+	githubController *internalGitHub.Controller
 }
 
-// NewStatusEventProcessor constructs a Processor instance for handling GitHub status events with optional configurations.
-func NewStatusEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
+// NewStatusEventProcessor constructs a Processor instance for handling Controller status events with optional configurations.
+func NewStatusEventProcessor(githubController *internalGitHub.Controller, opts ...Option) Processor {
 	_inst := &statusProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
@@ -26,19 +27,27 @@ func (p *statusProcessor) SetLogger(logger *slog.Logger) {
 }
 
 func (p *statusProcessor) Process(req any) (bus *promotion.Bus, err error) {
+	p.logger.Debug("processing status event...")
+
 	if p.githubController == nil {
 		return nil, promotion.NewInternalError("githubController is nil")
 	}
 	parsedBus, ok := req.(*promotion.Bus)
 	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *promotion.Bus got %T", req)
+		return bus, promotion.NewInternalErrorf("invalid event type. expected *promotion.Bus got %T", req)
 	}
 	bus = parsedBus
-	event := parsedBus.Event
+	evt := parsedBus.Event
 
-	e, ok := event.(*github.StatusEvent)
+	if !event.IsEnabled(event.Status) {
+		p.logger.Debug("status event is not enabled. skipping...")
+		bus.EventStatus = promotion.Skipped
+		return bus, nil
+	}
+
+	e, ok := evt.(*github.StatusEvent)
 	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *github.DeploymentStatusEvent got %T", event)
+		return bus, promotion.NewInternalErrorf("invalid event type. expected *github.DeploymentStatusEvent got %T", evt)
 	}
 
 	p.logger.Debug("processing status event...")
@@ -47,6 +56,7 @@ func (p *statusProcessor) Process(req any) (bus *promotion.Bus, err error) {
 	state := *e.State
 	if state != "success" {
 		p.logger.Info("ignoring non-success status event with unprocessable status event state...", slog.String("state", state))
+		bus.EventStatus = promotion.Skipped
 		return bus, nil
 	}
 

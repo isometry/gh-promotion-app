@@ -11,9 +11,6 @@ linters-settings:
     check-type-assertions: false
     check-blank: false
 
-  govet:
-    check-shadowing: false
-
   gofmt:
     simplify: true
 
@@ -73,12 +70,16 @@ linters-settings:
 linters:
   disable-all: true
   enable:
+    - copyloopvar
+    - dogsled
     - dupl
     - errcheck
-    - copyloopvar
+    - gci
     - ginkgolinter
     - goconst
+    - gocritic
     - gocyclo
+    - godot
     - gofmt
     - goimports
     - gosimple
@@ -86,6 +87,7 @@ linters:
     - ineffassign
     - misspell
     - nakedret
+    - perfsprint
     - prealloc
     - revive
     - staticcheck

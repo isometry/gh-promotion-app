@@ -22,9 +22,12 @@ jobs:
           cache: true
 
       - name: Lint
-        uses: golangci/golangci-lint-action@971e284b6050e8a5849b72094c50ab08da042db8
+        uses: golangci/golangci-lint-action@v6
         with:
+          only-new-issues: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           version: ${{ env.GOLANGCI_VERSION }}
+          args: '-c .golangci.yaml'
   Validate:
     runs-on: ubuntu-latest
     timeout-minutes: 2

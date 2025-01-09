@@ -1,0 +1,47 @@
+---
+global:
+  mode: <string>            # (defaults to "lambda")
+  logging:
+   verbosity: <int>         # 0:WarnLevel 1:InfoLevel 2:DebugLevel (defaults to 0)
+   callerTrace: <bool>      # (defaults to false)
+  s3:
+   upload:
+    enabled: <bool>         # (defaults to false)
+    bucketName: <string>
+
+promotion:
+  dynamicPromotion:
+    enabled: <bool>          # (defaults to true)
+    key: <string>            # (defaults to "gitops-promotion-path")
+  defaultStages: <[]string> # (defaults to ["main", "stating", "canary", "production"])
+  events: <[]string>
+    # defaults to:
+    #   - push
+    #   - pull_request
+    #   - pull_request_review
+    #   - deployment_status
+    #   - status
+    #   - check_suite
+    #   - check_run
+  push:
+   createTargetRef: <bool>  # (defaults to true)
+  feedback:
+   commitStatus:
+    enabled: <bool>         # (defaults to false)
+    context: <string>       # (defaults to "{source}→{target}")
+   checkRun:
+    enabled: <bool>         # (defaults to true)
+    name: <string>          # (defaults to "{source}→{target}")
+
+github:
+  authMode: <string>        # (defaults to "ssm")
+  ssmKey: <string>
+
+service:
+  path: <string>            # (defaults to "/")
+  addr: <string>
+  port: <string>            # (defaults to "8080")
+  timeout: <duration>       # (defaults to "5s")
+
+lambda:
+  payloadType: <string>     # (defaults to "api-gateway-v2")

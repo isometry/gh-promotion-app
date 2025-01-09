@@ -1,11 +1,12 @@
+// Package promoter_test provides a set of tests for the promotion package.
 package promotion_test
 
 import (
-	"io"
-	"log/slog"
 	"testing"
 
-	"github.com/google/go-github/v67/github"
+	"github.com/google/go-github/v68/github"
+	"github.com/isometry/gh-promotion-app/internal/config"
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/stretchr/testify/assert"
 )
@@ -38,9 +39,10 @@ func TestStageIndex(t *testing.T) {
 		},
 	}
 
+	promoter := promotion.NewStagePromoter("test", []string{"main", "staging", "canary", "production"})
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			assert.Equal(t, tc.Expected, promotion.NewDefaultPromoter().StageIndex(tc.Input))
+			assert.Equal(t, tc.Expected, promoter.StageIndex(tc.Input))
 		})
 	}
 }
@@ -84,6 +86,7 @@ func TestIsPromotionRequest(t *testing.T) {
 		},
 	}
 
+	promoter := promotion.NewStagePromoter("test", []string{"main", "staging", "canary", "production"})
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			pr := &github.PullRequest{
@@ -94,7 +97,7 @@ func TestIsPromotionRequest(t *testing.T) {
 					Ref: &tc.BaseRef,
 				},
 			}
-			assert.Equal(t, tc.ValidPromotion, promotion.NewDefaultPromoter().IsPromotionRequest(pr))
+			assert.Equal(t, tc.ValidPromotion, promoter.IsPromotionRequest(pr))
 		})
 	}
 }
@@ -138,16 +141,15 @@ func TestIsPromotableRef(t *testing.T) {
 		},
 	}
 
+	promoter := promotion.NewStagePromoter("test", []string{"main", "staging", "canary", "production"})
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			stage, result := promotion.NewDefaultPromoter().IsPromotableRef(tc.Ref)
+			stage, result := promoter.IsPromotableRef(tc.Ref)
 			assert.Equal(t, tc.ExpectedStage, stage)
 			assert.Equal(t, tc.ExpectedResult, result)
 		})
 	}
 }
-
-var discardLogger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 
 func TestNewDynamicPromoter(t *testing.T) {
 	testCases := []struct {
@@ -217,11 +219,11 @@ func TestNewDynamicPromoter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			promoter := promotion.NewDynamicPromoter(discardLogger, tc.Properties, tc.PromoterKey)
+			promoter := promotion.NewDynamicPromoter(helpers.NewNoopLogger(), tc.Properties, tc.PromoterKey, "test")
 			if tc.ExpectedStages != nil {
 				assert.Equal(t, tc.ExpectedStages, promoter.Stages)
 			} else {
-				assert.Equal(t, promotion.DefaultStages, promoter.Stages)
+				assert.Equal(t, config.Promotion.DefaultStages, promoter.Stages)
 			}
 		})
 	}

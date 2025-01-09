@@ -3,19 +3,20 @@ package processor
 import (
 	"log/slog"
 
-	"github.com/google/go-github/v67/github"
-	"github.com/isometry/gh-promotion-app/internal/controllers"
+	"github.com/google/go-github/v68/github"
+	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
+	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
 
 type deploymentStatusProcessor struct {
 	logger           *slog.Logger
-	githubController *controllers.GitHub
+	githubController *internalGitHub.Controller
 }
 
 // NewDeploymentStatusEventProcessor initializes a Processor for handling deployment status events with optional configurations.
-func NewDeploymentStatusEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
+func NewDeploymentStatusEventProcessor(githubController *internalGitHub.Controller, opts ...Option) Processor {
 	_inst := &deploymentStatusProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
@@ -26,26 +27,34 @@ func (p *deploymentStatusProcessor) SetLogger(logger *slog.Logger) {
 }
 
 func (p *deploymentStatusProcessor) Process(req any) (bus *promotion.Bus, err error) {
+	p.logger.Debug("processing deployment-status event...")
+
 	if p.githubController == nil {
 		return nil, promotion.NewInternalError("githubController is nil")
 	}
 	parsedBus, ok := req.(*promotion.Bus)
 	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *promotion.Bus got %T", req)
+		return bus, promotion.NewInternalErrorf("invalid event type. expected *promotion.Bus got %T", req)
 	}
 	bus = parsedBus
-	event := parsedBus.Event
+	evt := parsedBus.Event
 
-	e, ok := event.(*github.DeploymentStatusEvent)
-	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *github.DeploymentStatusEvent got %T", event)
+	if !event.IsEnabled(event.DeploymentStatus) {
+		p.logger.Debug("deployment_status event is not enabled. skipping...")
+		bus.EventStatus = promotion.Skipped
+		return bus, nil
 	}
 
-	p.logger.Info("processing deployment status event...")
+	e, ok := evt.(*github.DeploymentStatusEvent)
+	if !ok {
+		return bus, promotion.NewInternalErrorf("invalid event type. expected *github.DeploymentStatusEvent got %T", evt)
+	}
 
 	state := *e.DeploymentStatus.State
 	if state != "success" {
-		p.logger.Info("ignoring non-success deployment status event with unprocessable deployment status state...", slog.String("state", state))
+		p.logger.Debug("ignoring non-success deployment status event with unprocessable deployment status state...", slog.String("state", state))
+		bus.EventStatus = promotion.Skipped
+		return bus, nil
 	}
 
 	bus.Context.HeadRef = helpers.NormaliseFullRefPtr(*e.Deployment.Ref)

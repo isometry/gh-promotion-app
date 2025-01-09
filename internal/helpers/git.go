@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// NormaliseRefPtr is a helper function that normalises a Git reference and returns a pointer to the resulting string.
+// NormaliseRefPtr is a helper function that normalizes a Git reference and returns a pointer to the resulting string.
 func NormaliseRefPtr[S string | *string](ref S) *string {
 	rn := NormaliseRef(ref)
 	return &rn
@@ -32,9 +32,4 @@ func NormaliseFullRef[S string | *string](ref S) string {
 func NormaliseFullRefPtr[S string | *string](ref S) *string {
 	rn := NormaliseFullRef(ref)
 	return &rn
-}
-
-// ExtractRefFromFullRef removes the "refs/heads/" prefix from a full Git reference string and returns the shortened name.
-func ExtractRefFromFullRef(fullRef string) string {
-	return strings.TrimPrefix(fullRef, "refs/heads/")
 }

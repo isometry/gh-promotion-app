@@ -12,10 +12,15 @@ type InternalError struct {
 }
 
 func (m *InternalError) Error() string {
-	return fmt.Sprintf("promotion error: %v", m.Cause)
+	return fmt.Sprintf("internal promotion error: %v", m.Cause)
 }
 
-// NewInternalError creates and returns a new `InternalError` with a formatted error message as its cause.
-func NewInternalError(format string, args ...any) error {
+// NewInternalErrorf creates and returns a new `InternalError` with a formatted error message as its cause.
+func NewInternalErrorf(format string, args ...any) error {
 	return &InternalError{Cause: errors.Errorf(format, args...)}
+}
+
+// NewInternalError creates and returns a new `InternalError` with the provided message string as cause.
+func NewInternalError(message string) error {
+	return &InternalError{Cause: errors.New(message)}
 }
