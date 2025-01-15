@@ -1,39 +1,31 @@
 package cmd
 
 import (
+	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
-	"time"
+	"os"
 
+	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
-var (
-	svcHostPath, svcHostAddr, svcHostPort string
-	svcIoTimeout                          time.Duration
-)
-
 var serviceCmd = &cobra.Command{
 	Use:     "service",
-	Aliases: []string{"s", "serve", "standalone", "server"},
-	PreRunE: func(cmd *cobra.Command, _ []string) error {
-		loadViperVariables(cmd)
-		logger = logger.With("mode", "service")
-		logger.Info("spawning...")
-
-		return nil
-	},
+	Aliases: []string{"srv", "serve", "standalone", "server"},
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		logger = logger.With("mode", "service")
 		logger.Debug("creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
-			handler.WithWebhookSecret(webhookSecret),
-			handler.WithAuthMode(githubAuthMode),
-			handler.WithToken(githubToken),
-			handler.WithSSMKey(githubSSMKey),
+			handler.WithAuthMode(config.GitHub.AuthMode),
+			handler.WithSSMKey(config.GitHub.SSMKey),
+			handler.WithWebhookSecret(config.GitHub.WebhookSecret),
+			handler.WithToken(os.Getenv("GITHUB_TOKEN")),
 			handler.WithContext(cmd.Context()),
-			handler.WithLogger(logger.With("component", "promotion-handler")))
+			handler.WithLogger(logger))
 		if err != nil {
 			return err
 		}
@@ -41,21 +33,20 @@ var serviceCmd = &cobra.Command{
 		runtime := runtime.NewRuntime(hdl,
 			runtime.WithLogger(logger.With("component", "runtime")))
 
-		logger.With("path", svcHostPath).Debug("creating HTTP server...")
 		h := http.NewServeMux()
-		h.HandleFunc(svcHostPath, runtime.ServeHTTP)
+		h.HandleFunc(config.Service.Path, runtime.Service)
 
 		s := &http.Server{
 			Handler:      h,
-			Addr:         net.JoinHostPort(svcHostAddr, svcHostPort),
-			WriteTimeout: svcIoTimeout,
-			ReadTimeout:  svcIoTimeout,
-			IdleTimeout:  svcIoTimeout,
+			Addr:         net.JoinHostPort(config.Service.Addr, config.Service.Port),
+			WriteTimeout: config.Service.Timeout,
+			ReadTimeout:  config.Service.Timeout,
+			IdleTimeout:  config.Service.Timeout,
 		}
 
-		logger.Info("serving...",
-			"address", s.Addr, "path", svcHostPath, "timeout", svcIoTimeout.String(), "authMode", githubAuthMode,
-		)
+		logger.Info("service starting...",
+			slog.String("service", fmt.Sprintf("%+v", config.Service)),
+			slog.String("authMode", config.GitHub.AuthMode))
 		return s.ListenAndServe()
 	},
 }

@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/go-github/v67/github"
+	"github.com/google/go-github/v68/github"
+	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/models"
 	"github.com/shurcooL/githubv4"
@@ -16,14 +17,32 @@ type Bus struct {
 	Context  *Context
 	Response models.Response
 
-	EventType string
-	Event     any
+	EventType   event.Type
+	Event       any
+	EventStatus EventStatus
 
 	Body    []byte
 	Headers map[string]string
+	Error   error
 
 	Repository *models.RepositoryContext
 }
+
+// EventStatus represents the status of a promotion event, which can be one of success, failure, or pending.
+type EventStatus string
+
+const (
+	// Success represents a successful promotion event.
+	Success EventStatus = "success"
+	// Failure represents a failed promotion event.
+	Failure EventStatus = "failure"
+	// Error represents an errored promotion event.
+	Error EventStatus = "error"
+	// Pending represents a pending promotion event.
+	Pending EventStatus = "pending"
+	// Skipped represents a skipped promotion event.
+	Skipped EventStatus = "skipped"
+)
 
 // LogValue returns a slog.Value by delegating to the Context's LogValue method, encapsulating structured log attributes.
 func (b *Bus) LogValue() slog.Value {
@@ -40,6 +59,7 @@ type Context struct {
 	HeadRef     *string
 	HeadSHA     *string
 	PullRequest *github.PullRequest
+	Commits     []*github.RepositoryCommit
 
 	Promoter *Promoter
 	ClientV3 *github.Client

@@ -2,10 +2,11 @@
 package validation
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v67/github"
+	"github.com/google/go-github/v68/github"
 )
 
 // WebhookSecret represents a secret used to validate webhook signatures for verifying request authenticity.
@@ -20,11 +21,11 @@ func NewWebhookSecret(secret string) *WebhookSecret {
 // ValidateSignature validates the HMAC-SHA256 signature of a webhook request using the provided body and headers.
 func (s *WebhookSecret) ValidateSignature(body []byte, headers map[string]string) error {
 	if s == nil {
-		return fmt.Errorf("missing webhook secret")
+		return errors.New("missing webhook secret")
 	}
 	signature, found := headers[strings.ToLower(github.SHA256SignatureHeader)]
 	if !found {
-		return fmt.Errorf("missing HMAC-SHA256 signature")
+		return errors.New("missing HMAC-SHA256 signature")
 	}
 
 	if contentType := headers["content-type"]; contentType != "application/json" {
