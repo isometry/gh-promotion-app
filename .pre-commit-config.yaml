@@ -2,8 +2,25 @@
 repos:
   - repo: local
     hooks:
-        - id: tests
-          name: run tests
-          entry: go test -v ./...
-          language: system
-          pass_filenames: false
+      - id: unit-tests
+        name: unit-tests
+        entry: go test -v ./...
+        types: [go]
+        language: system
+        pass_filenames: false
+  - repo: local
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run ./... -c .golangci.yaml --fix
+        types: [go]
+        language: system
+        pass_filenames: false
+  - repo: local
+    hooks:
+      - id: sast
+        name: run local security analysis
+        entry: gosec ./...
+        types: [go]
+        language: system
+        pass_filenames: false

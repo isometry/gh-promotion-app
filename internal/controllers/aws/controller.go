@@ -1,11 +1,10 @@
-// Package controllers provides a wrapper for AWS services with context and logging support.
-package controllers
+// Package aws provides the Controller struct that wraps AWS services and provides S3 and SSM functionality with context and logging support.
+package aws
 
 import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"time"
 
@@ -14,11 +13,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/smithy-go/logging"
+	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/pkg/errors"
 )
 
-// AWS represents a wrapper for AWS services providing S3 and SSM functionality with context and logging support.
-type AWS struct {
+// Controller represents a wrapper for Controller services providing S3 and SSM functionality with context and logging support.
+type Controller struct {
 	ctx    context.Context
 	logger *slog.Logger
 
@@ -27,28 +27,28 @@ type AWS struct {
 	ssmClient *ssm.Client
 }
 
-// Option defines a function type used to configure an instance of the AWS struct.
-type Option func(*AWS)
+// Option defines a function type used to configure an instance of the Controller struct.
+type Option func(*Controller)
 
-// NewAWSController initializes an AWS controller with customizable options and default configurations if unspecified.
-// It returns an instance of the AWS struct and an error if any required initialization steps fail.
-func NewAWSController(opts ...Option) (*AWS, error) {
-	_inst := &AWS{}
+// NewController initializes a Controller with customizable options and default configurations if unspecified.
+// It returns an instance of the Controller struct and an error if any required initialization steps fail.
+func NewController(opts ...Option) (*Controller, error) {
+	_inst := &Controller{}
 	for _, opt := range opts {
 		opt(_inst)
 	}
 	if _inst.logger == nil {
-		_inst.logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
+		_inst.logger = helpers.NewNoopLogger()
 	}
-	_inst.logger = _inst.logger.With("controller", "AWS")
+	_inst.logger = _inst.logger.With("controller", "Controller")
 	if _inst.ctx == nil {
 		_inst.ctx = context.Background()
 	}
 	if _inst.config == nil {
-		_inst.logger.Debug("loading default AWS configuration...")
+		_inst.logger.Debug("loading default Controller configuration...")
 		cfg, err := config.LoadDefaultConfig(_inst.ctx)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to load AWS configuration")
+			return nil, errors.Wrap(err, "failed to load Controller configuration")
 		}
 		cfg.Logger = newAWSLogger(_inst.logger)
 		_inst.config = &cfg
@@ -59,10 +59,10 @@ func NewAWSController(opts ...Option) (*AWS, error) {
 	return _inst, nil
 }
 
-// GetSecret retrieves a secret value from AWS SSM Parameter Store using the provided key.
+// GetSecret retrieves a secret value from Controller SSM Parameter Store using the provided key.
 // If encrypted is true, the secret is returned decrypted.
 // Returns the secret value as a string pointer or an error if retrieval fails.
-func (a *AWS) GetSecret(key string, encrypted bool) (*string, error) {
+func (a *Controller) GetSecret(key string, encrypted bool) (*string, error) {
 	a.logger.With("key", key).Debug("fetching SSM secret...")
 	ssmResponse, err := a.ssmClient.GetParameter(a.ctx, &ssm.GetParameterInput{
 		Name:           aws.String(key),
@@ -74,12 +74,12 @@ func (a *AWS) GetSecret(key string, encrypted bool) (*string, error) {
 	return ssmResponse.Parameter.Value, nil
 }
 
-// PutS3Object uploads a JSON object to the specified S3 bucket with a key formatted as a timestamp and event type.
+// PutS3Object uploads a JSON object to the specified S3 bucket with a key formatted as a timestamp and the provided ID.
 // The method takes the event type, bucket name, and the object body as a byte slice as parameters.
 // Returns an error if the S3 upload fails or if the bucket name is empty.
-func (a *AWS) PutS3Object(eventType, bucket string, body []byte) error {
+func (a *Controller) PutS3Object(id string, bucket string, body []byte) error {
 	if bucket != "" {
-		key := fmt.Sprintf("%s.%s", time.Now().UTC().Format(time.RFC3339Nano), eventType)
+		key := fmt.Sprintf("%s.%s", time.Now().UTC().Format(time.RFC3339Nano), id)
 		_, err := a.s3Client.PutObject(a.ctx, &s3.PutObjectInput{
 			Bucket:      &bucket,
 			Key:         aws.String(key),

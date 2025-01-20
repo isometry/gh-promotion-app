@@ -1,0 +1,40 @@
+{{- with .ErrorMessage }}
+> [!CAUTION]
+{{- else }}
+> [!TIP]
+{{- end }}
+> ```mermaid
+{{ .Mermaid | addLinesPrefix " > " }}
+> ```
+{{- with .ErrorMessage }}
+> ### `Reason(s)`
+> ---
+{{ . | cutHeadLines 1 | color "Red" | addLinesPrefix " > " }}
+{{- end }}
+{{- with .Commits }}
+> ---
+> ### `Changes`
+> <details>
+>   <summary><i>expand to see {{ len . }} commits...</i></summary>
+>
+> | SHA | Author | Message |
+> | :---: | :--- | :---------------------------------------------- |
+    {{- range . }}
+> | [{{substr .SHA 0 8}}]({{.HTMLURL}}) | [{{.Commit.Author.Name}}]({{.Author.HTMLURL}}) | <pre>{{.Commit.Message | replace "\n" "<br>"}}</pre> |
+    {{- end }}
+>
+> </details>
+{{- end }}
+>
+{{- with .Metadata }}
+> ---
+> ### `Metadata`
+> <details>
+>   <summary><i>expand to see entries...</i></summary>
+>
+> ```yaml
+{{ . | toYaml | addLinesPrefix " > " }}
+> ```
+{{- end }}
+> </details>
+>

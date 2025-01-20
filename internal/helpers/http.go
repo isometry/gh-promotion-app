@@ -12,8 +12,8 @@ type httpResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// RespondHTTP writes the response to the http.ResponseWriter
-func RespondHTTP(response models.Response, err error, rw http.ResponseWriter) {
+// RespondHTTP writes the response to the http.ResponseWriter.
+func RespondHTTP(rw http.ResponseWriter, response models.Response, err error) {
 	hR := httpResponse{
 		Message: response.Body,
 	}

@@ -1,0 +1,50 @@
+%%{init: {'theme': 'neutral', 'themeVariables': { 'edgeLabelBackground': 'transparent'}}}%%
+flowchart LR
+{{- with .Stages }}
+  {{- range $_, $name := . }}
+    {{$name}}("fab:fa-github <b>{{$name}}</b>")
+  {{- end }}
+{{- end }}
+{{- with .PullRequest }}
+    pr@{shape: das, label: "&nbsp;&nbsp;<a href='{{ .HTMLURL }}'><b>PR-{{ .Number }}</b></a>&nbsp;&nbsp;<i class="fa-solid fa-code-pull-request"></i>"}
+{{- end }}
+{{- with .Error }}
+%% Errors
+    error@{ shape: dbl-circ, label: "Promotion blocked" }
+{{- end }}
+{{- with .Stages }}
+  {{- $count := len . }}
+  {{- range $idx, $name := . }}
+    {{- if lt $idx (sub $count 1) }}
+      {{- if ne $idx $.PromotionIndex }}
+    {{$name}} --> {{index $.Stages (add $idx 1)}}
+      {{- else }}
+    {{$name}} --> pr
+      {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- with $.Commits }}
+    pr --- |&nbsp;&nbsp;{{len $.Commits}} commits&nbsp;&nbsp;| {{index $.Stages (add $.PromotionIndex 1)}}
+{{- else }}
+    pr --- {{index $.Stages (add $.PromotionIndex 1)}}
+{{- end }}
+{{- with .Error }}
+    pr --> error
+{{- end }}
+%% Styling
+    style main color:#FFFFFF, fill:#ab5fde, stroke:#ab5fde
+    style staging color:#FFFFFF, fill:#30914a, stroke:#30914a
+    style canary color:#FFFFFF, fill:#e87454, stroke:#e87454
+    style production color:#FFFFFF, fill:#2962FF, stroke:#2962FF
+{{- with .Error }}
+    style error color:#f71505, fill:#fff, stroke:#f71505, stroke-dasharray: 5 5
+{{- end }}
+    style pr color:#000000, fill:#fff, stroke:#000000
+%% Style for the dashed edge
+{{- with .Error }}
+    linkStyle {{sub (len $.Stages) 1}} fill:fff, stroke:#f71505, stroke-width:2px, stroke-dasharray:4
+    linkStyle {{len $.Stages}} stroke:#f71505, stroke-width:2px, stroke-dasharray:4, color:#c4c4c4
+{{- else }}
+    linkStyle {{sub (len $.Stages) 1}} fill:fff, stroke-width:2px, stroke-dasharray:4
+{{- end }}

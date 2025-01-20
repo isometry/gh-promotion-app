@@ -2,21 +2,21 @@ package processor
 
 import (
 	"log/slog"
-	"slices"
 
-	"github.com/google/go-github/v67/github"
-	"github.com/isometry/gh-promotion-app/internal/controllers"
+	"github.com/google/go-github/v68/github"
+	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
+	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
 
 type checkSuiteEventProcessor struct {
 	logger           *slog.Logger
-	githubController *controllers.GitHub
+	githubController *internalGitHub.Controller
 }
 
 // NewCheckSuiteEventProcessor initializes a Processor for handling check suite events with optional configurations.
-func NewCheckSuiteEventProcessor(githubController *controllers.GitHub, opts ...Option) Processor {
+func NewCheckSuiteEventProcessor(githubController *internalGitHub.Controller, opts ...Option) Processor {
 	_inst := &checkSuiteEventProcessor{githubController: githubController, logger: helpers.NewNoopLogger()}
 	applyOpts(_inst, opts...)
 	return _inst
@@ -27,28 +27,43 @@ func (p *checkSuiteEventProcessor) SetLogger(logger *slog.Logger) {
 }
 
 func (p *checkSuiteEventProcessor) Process(req any) (bus *promotion.Bus, err error) {
+	p.logger.Debug("processing check-suite event...")
+
 	if p.githubController == nil {
-		return nil, promotion.NewInternalError("githubController is nil")
+		return nil, promotion.NewInternalErrorf("githubController is nil")
 	}
 	parsedBus, ok := req.(*promotion.Bus)
 	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *promotion.Bus got %T", req)
+		return bus, promotion.NewInternalErrorf("invalid event type. expected *promotion.Bus got %T", req)
 	}
 	bus = parsedBus
-	event := parsedBus.Event
+	evt := parsedBus.Event
+
+	if !event.IsEnabled(event.CheckSuite) {
+		p.logger.Debug("check_suite event is not enabled. skipping...")
+		bus.EventStatus = promotion.Skipped
+		return bus, nil
+	}
 
 	if p.githubController == nil {
-		return nil, promotion.NewInternalError("githubController is nil")
+		return nil, promotion.NewInternalErrorf("githubController is nil")
 	}
-	e, ok := event.(*github.CheckSuiteEvent)
+	e, ok := evt.(*github.CheckSuiteEvent)
 	if !ok {
-		return nil, promotion.NewInternalError("invalid event type. expected *github.CheckSuiteEvent got %T", event)
+		return bus, promotion.NewInternalErrorf("invalid event type. expected *github.CheckSuiteEvent got %T", evt)
 	}
 
-	p.logger.Debug("processing check suite event...")
+	if e.CheckSuite == nil || e.CheckSuite.Status == nil || e.CheckSuite.Conclusion == nil {
+		p.logger.Info("ignoring check suite event without check suite...")
+		bus.EventStatus = promotion.Skipped
+		return bus, nil
+	}
 
-	if *e.CheckSuite.Status != "completed" || slices.Contains([]string{"neutral", "skipped", "success"}, *e.CheckSuite.Conclusion) {
-		p.logger.Info("ignoring incomplete check suite event with unprocessable check-suite status...", slog.String("status", *e.CheckSuite.Status))
+	if *e.CheckSuite.Status != "completed" || *e.CheckSuite.Conclusion != "success" {
+		p.logger.Info("ignoring incomplete check suite event and/or non-success check-suite status...",
+			slog.String("conclusion", *e.CheckSuite.Conclusion),
+			slog.String("status", *e.CheckSuite.Status))
+		bus.EventStatus = promotion.Skipped
 		return bus, nil
 	}
 
