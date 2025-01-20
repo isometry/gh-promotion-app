@@ -5,7 +5,7 @@
 [![publish](https://github.com/isometry/gh-promotion-app/actions/workflows/publish.yaml/badge.svg?branch=main)](https://github.com/isometry/gh-promotion-app/actions/workflows/publish.yaml)
 <br>
 
-<p style="text-align: center">
+<p align="center">
     <img src="https://github.com/isometry/gh-promotion-app/blob/main/docs/images/banner.png?raw=true" width="220"
          alt="banner"/>
     <br>
@@ -40,7 +40,7 @@ It currently supports the following event types:
 
 ### Overview
 
-<p style="text-align: center">
+<p align="center">
     <img src="https://github.com/isometry/gh-promotion-app/blob/main/docs/images/overview.png?raw=true" width="500"
          alt="overview"/>
 </p>
