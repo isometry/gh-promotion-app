@@ -78,6 +78,7 @@ however when clicked, it provides a more detailed view of the promotion process.
 #### Commit Status
 
 Commits that are part of a promotion are marked with a status check. The format is as follows:
+
 `{source}→{target} - {status} @ {timestamp}`
 
 <details>
