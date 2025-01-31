@@ -50,6 +50,12 @@ func (p *pullRequestEventProcessor) Process(req any) (bus *promotion.Bus, err er
 		return nil, promotion.NewInternalErrorf("invalid event type. expected *github.PullRequestEvent got %T", evt)
 	}
 
+	if *e.PullRequest.Draft {
+		p.logger.Info("ignoring draft pull request...")
+		bus.EventStatus = promotion.Skipped
+		return bus, nil
+	}
+
 	bus.Context.BaseRef = helpers.NormaliseRefPtr(*e.PullRequest.Base.Ref)
 	bus.Context.HeadRef = helpers.NormaliseRefPtr(*e.PullRequest.Head.Ref)
 	bus.Context.HeadSHA = e.PullRequest.Head.SHA
