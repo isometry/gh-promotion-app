@@ -306,12 +306,16 @@ func (g *Controller) ListPullRequestCommits(pCtx *promotion.Context) ([]*github.
 }
 
 // CreatePullRequest creates a new pull request in the repository.
-func (g *Controller) CreatePullRequest(pCtx *promotion.Context) (*github.PullRequest, error) {
+func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest, error) {
+	pCtx := ctx.Context
+
+	draftMode := helpers.GetCustomProperty[bool](ctx.Repository.CustomProperties, config.Promotion.Push.CreatePullRequestInDraftModeKey)
 	pr, _, err := pCtx.ClientV3.PullRequests.Create(g.ctx, *pCtx.Owner, *pCtx.Repository, &github.NewPullRequest{
 		Title:               g.RequestTitle(*pCtx),
 		Head:                pCtx.HeadRef,
 		Base:                pCtx.BaseRef,
 		MaintainerCanModify: github.Ptr(false),
+		Draft:               github.Ptr(draftMode),
 	})
 
 	if err != nil {

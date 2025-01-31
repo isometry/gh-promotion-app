@@ -59,6 +59,9 @@ type promotion struct {
 	Events []string `yaml:"events,omitempty" default:"[\"push\", \"pull_request\", \"pull_request_review\", \"deployment_status\", \"status\", \"check_suite\", \"workflow_run\"]"`
 	// Push is a struct that contains the configuration for pushing changes.
 	Push struct {
+		// CreatePullRequestInDraftModeKey is the key to use to inspect the repository custom properties for draft PR creation.
+		CreatePullRequestInDraftModeKey string `yaml:"createPullRequestInDraftModeKey,omitempty" default:"gitops-promotion-draft-pr"`
+		// CreateTargetRef is a flag that enables the creation of missing target branches.
 		CreateTargetRef bool `yaml:"createTargetRef,omitempty" default:"true"`
 	} `yaml:"push,omitempty"`
 	// Feedback is a struct that contains the configuration for feedback.

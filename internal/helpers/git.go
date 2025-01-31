@@ -3,6 +3,7 @@ package helpers
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -32,4 +33,27 @@ func NormaliseFullRef[S string | *string](ref S) string {
 func NormaliseFullRefPtr[S string | *string](ref S) *string {
 	rn := NormaliseFullRef(ref)
 	return &rn
+}
+
+// PropertyType is an interface that represents a property type that can be either a string or a boolean.
+type PropertyType interface {
+	string | bool
+}
+
+// GetCustomProperty is a helper function that retrieves a custom property from a map of string properties.
+func GetCustomProperty[PT PropertyType](props map[string]string, key string) PT {
+	var pt PT
+	if val, ok := props[key]; ok {
+		switch any(pt).(type) {
+		case string:
+			return any(val).(PT)
+		case bool:
+			bv, err := strconv.ParseBool(val)
+			if err != nil {
+				return any(false).(PT)
+			}
+			return any(bv).(PT)
+		}
+	}
+	return pt
 }

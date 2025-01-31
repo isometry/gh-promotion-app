@@ -82,7 +82,7 @@ func (p *pushEventProcessor) Process(req any) (bus *promotion.Bus, err error) {
 	}
 
 	p.logger.Debug("creating promotion PR...")
-	bus.Context.PullRequest, err = p.githubController.CreatePullRequest(bus.Context)
+	bus.Context.PullRequest, err = p.githubController.CreatePullRequest(bus)
 	if err != nil {
 		p.logger.Error("failed to create promotion PR", slog.Any("error", err))
 		bus.Response = models.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}
