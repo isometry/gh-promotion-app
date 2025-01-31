@@ -117,7 +117,8 @@ promotion:
     enabled: <bool>          # (defaults to true)
     key: <string>            # (defaults to "gitops-promotion-path")
   push:
-    createTargetRef: <bool>  # (defaults to true)
+    createTargetRef: <bool>                    # (defaults to true)
+    createPullRequestInDraftModeKey: <string>  # (defaults to "gitops-promotion-draft-pr")
   feedback:
     commitStatus:
       enabled: <bool>         # (defaults to true)

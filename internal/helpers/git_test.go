@@ -56,3 +56,42 @@ func TestNormaliseRef(t *testing.T) {
 		})
 	}
 }
+
+func TestGetCustomProperty(t *testing.T) {
+	testCases := []struct {
+		Name     string
+		Key      string
+		Props    map[string]string
+		Expected any
+	}{
+		{
+			Name:     "does_not_exist",
+			Key:      "invalid",
+			Props:    map[string]string{},
+			Expected: false,
+		},
+		{
+			Name:     "bool_true",
+			Key:      "key",
+			Props:    map[string]string{"key": "true"},
+			Expected: true,
+		},
+		{
+			Name:     "string",
+			Key:      "key",
+			Props:    map[string]string{"key": "test"},
+			Expected: "test",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			switch tc.Expected.(type) {
+			case bool:
+				assert.Equal(t, tc.Expected, helpers.GetCustomProperty[bool](tc.Props, tc.Key))
+			case string:
+				assert.Equal(t, tc.Expected, helpers.GetCustomProperty[string](tc.Props, tc.Key))
+			}
+		})
+	}
+}
