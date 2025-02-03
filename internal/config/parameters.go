@@ -25,8 +25,17 @@ var (
 	Lambda lambda
 )
 
+const (
+	// ModeService is the service runtime mode.
+	ModeService = "service"
+	// ModeLambdaHTTP is the lambda-http runtime mode.
+	ModeLambdaHTTP = "lambda-http"
+	// ModeLambdaEvent is the lambda-event runtime mode.
+	ModeLambdaEvent = "lambda-event"
+)
+
 type global struct {
-	// Mode is the runtime mode of the application.
+	// Mode is the runtime mode of the application. (service, lambda, lambda-event)
 	Mode string `yaml:"mode,omitempty" default:"lambda"`
 	// Logging is a struct that contains the logging configuration.
 	Logging struct {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v68/github"
+	"github.com/isometry/gh-promotion-app/internal/config"
 	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
@@ -51,7 +52,7 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 
 	eventType, found := headers[strings.ToLower(github.EventTypeHeader)]
 	if !found {
-		p.logger.Warn("missing event type")
+		p.logger.Error("missing event type")
 		return &promotion.Bus{
 			Response: models.Response{Body: "missing event type", StatusCode: http.StatusUnprocessableEntity},
 		}, promotion.NewInternalError("missing event type")
@@ -60,7 +61,7 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 
 	deliveryID, found := headers[strings.ToLower(github.DeliveryIDHeader)]
 	if !found {
-		p.logger.Warn("missing delivery ID")
+		p.logger.Error("missing delivery ID")
 		return &promotion.Bus{
 			Response: models.Response{Body: "missing delivery ID", StatusCode: http.StatusUnprocessableEntity},
 		}, promotion.NewInternalError("missing delivery ID")
@@ -69,7 +70,7 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 	// Validate the request
 	resp, err := p.checkEventType(bus.EventType, authRequest.EventProcessors)
 	if err != nil {
-		p.logger.Warn("validating request", slog.Any("error", err))
+		p.logger.Error("failed to validate request", slog.Any("error", err))
 		return &promotion.Bus{
 			Response: *resp,
 		}, promotion.NewInternalErrorf("failed to validate request. error: %v", err)
@@ -80,16 +81,20 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 
 	// Refresh credentials if needed
 	if err = p.githubController.RetrieveCredentials(); err != nil {
-		p.logger.Warn("failed to refresh credentials", slog.Any("error", err))
+		p.logger.Error("failed to refresh credentials", slog.Any("error", err))
 		return &promotion.Bus{
 			Response: models.Response{Body: err.Error(), StatusCode: http.StatusUnauthorized},
 		}, promotion.NewInternalErrorf("failed to refresh credentials. error: %v", err)
 	}
-	if err = p.githubController.ValidateWebhookSecret(body, headers); err != nil {
-		p.logger.Warn("validating signature", slog.Any("error", err))
-		return &promotion.Bus{
-			Response: models.Response{Body: err.Error(), StatusCode: http.StatusForbidden},
-		}, promotion.NewInternalErrorf("failed to validate signature. error: %v", err)
+	if config.Global.Mode != config.ModeLambdaEvent {
+		if err = p.githubController.ValidateWebhookSecret(body, headers); err != nil {
+			p.logger.Error("failed to validate signature", slog.Any("error", err))
+			return &promotion.Bus{
+				Response: models.Response{Body: err.Error(), StatusCode: http.StatusForbidden},
+			}, promotion.NewInternalErrorf("failed to validate signature. error: %v", err)
+		}
+	} else {
+		p.logger.Debug("skipping webhook signature validation in lambda-event mode...")
 	}
 	p.logger.Debug("request body is valid")
 
@@ -98,7 +103,7 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 
 	repo, err := p.extractRepositoryContext(body)
 	if err != nil {
-		p.logger.Warn("failed to extract repository context", slog.Any("error", err))
+		p.logger.Error("failed to extract repository context", slog.Any("error", err))
 		return &promotion.Bus{
 			Response: models.Response{Body: err.Error(), StatusCode: http.StatusUnprocessableEntity},
 		}, promotion.NewInternalErrorf("failed to extract repository context. error: %v", err)
@@ -108,7 +113,7 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 	p.logger.Debug("authenticating...")
 	var clients *internalGitHub.Client
 	if clients, err = p.githubController.GetGitHubClients(body); err != nil {
-		p.logger.Warn("failed to authenticate", slog.Any("error", err))
+		p.logger.Error("failed to authenticate", slog.Any("error", err))
 		return &promotion.Bus{
 			Response: models.Response{Body: err.Error(), StatusCode: http.StatusUnauthorized},
 		}, promotion.NewInternalErrorf("failed to authenticate. error: %v", err)
@@ -116,7 +121,7 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 
 	evt, err := github.ParseWebHook(eventType, body)
 	if err != nil {
-		p.logger.Warn("parsing webhook payload", slog.Any("error", err))
+		p.logger.Error("failed to parse webhook payload", slog.Any("error", err))
 		return &promotion.Bus{
 			Response: models.Response{Body: err.Error(), StatusCode: http.StatusUnprocessableEntity},
 		}, promotion.NewInternalErrorf("failed to parse webhook payload. error: %v", err)

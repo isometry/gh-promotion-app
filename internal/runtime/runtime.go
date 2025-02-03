@@ -44,7 +44,7 @@ func NewRuntime(handler *handler.Handler, opts ...Option) *Runtime {
 
 // Lambda is the entrypoint function when the `--mode lambda` flag is set.
 func (r *Runtime) Lambda(req models.Request) (response any, err error) {
-	r.logger.Info("received request")
+	r.logger.Info("received request", slog.Any("request", req))
 
 	// Lower-case incoming headers for compatibility purposes
 	headers := make(map[string]string, len(req.Headers))
@@ -77,6 +77,18 @@ func (r *Runtime) Lambda(req models.Request) (response any, err error) {
 	default:
 		return nil, fmt.Errorf("unsupported lambda payload type: %s", payloadType)
 	}
+}
+
+// LambdaForEvent is the entrypoint function when the `--mode lambda-event` flag is set.
+func (r *Runtime) LambdaForEvent(event map[string]any) (any, error) {
+	r.logger.Info("received event", slog.Any("event", event))
+
+	bus, err := r.Handler.ProcessEvent(event)
+	if err != nil {
+		return nil, err
+	}
+
+	return bus.Response, err
 }
 
 // Service is the entrypoint function when the `--mode service` flag is set.

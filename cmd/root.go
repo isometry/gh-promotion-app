@@ -39,10 +39,12 @@ var rootCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		switch config.Global.Mode {
-		case "service":
+		case config.ModeService:
 			return serviceCmd.RunE(cmd, args)
-		case "lambda":
-			return lambdaCmd.RunE(cmd, args)
+		case config.ModeLambdaHTTP:
+			return lambdaHTTPCmd.RunE(cmd, args)
+		case config.ModeLambdaEvent:
+			return lambdaEventCmd.RunE(cmd, args)
 		default:
 			return fmt.Errorf("invalid mode: %s", config.Global.Mode)
 		}

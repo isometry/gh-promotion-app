@@ -11,11 +11,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	promotionRuntime *runtime.Runtime
+)
+
 var lambdaCmd = &cobra.Command{
-	Use:     "lambda",
-	Aliases: []string{"l", "serverless"},
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		logger = logger.With("mode", "lambda")
+	Use: "lambda",
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		cmd.Parent().Parent().PersistentPreRun(cmd, args)
+
 		logger.Debug("creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithLambdaPayloadType(config.Lambda.PayloadType),
@@ -28,19 +32,45 @@ var lambdaCmd = &cobra.Command{
 		if err != nil {
 			return errors.Wrap(err, "failed to create promotion handler")
 		}
-
 		logger.Debug("creating runtime...")
-		runtime := runtime.NewRuntime(hdl,
+		promotionRuntime = runtime.NewRuntime(hdl,
 			runtime.WithLogger(logger.With("component", "runtime")))
+		return nil
+	},
+}
+
+// lambdaHTTPCmd is the command for running the lambda-http mode.
+var lambdaHTTPCmd = &cobra.Command{
+	Use: "http",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		config.Global.Mode = config.ModeLambdaHTTP
+		logger = logger.With("mode", config.Global.Mode)
 
 		logger.Info("lambda starting...")
-		lambda.StartWithOptions(runtime.Lambda,
+		lambda.StartWithOptions(promotionRuntime.Lambda,
 			lambda.WithContext(cmd.Context()))
 
 		return nil
 	},
 }
 
+// lambdaEventCmd is the command for running the lambda in event mode.
+var lambdaEventCmd = &cobra.Command{
+	Use: "event",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		config.Global.Mode = config.ModeLambdaEvent
+		logger = logger.With("mode", config.Global.Mode)
+
+		logger.Info("lambda starting...")
+		lambda.StartWithOptions(promotionRuntime.LambdaForEvent,
+			lambda.WithContext(cmd.Context()))
+		return nil
+	},
+}
+
 func init() {
+	lambdaCmd.AddCommand(lambdaEventCmd)
+	lambdaCmd.AddCommand(lambdaHTTPCmd)
+
 	bindEnvMap(lambdaCmd, lambdaEnvMapString)
 }
