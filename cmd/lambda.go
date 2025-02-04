@@ -19,22 +19,6 @@ var lambdaCmd = &cobra.Command{
 	Use: "lambda",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		cmd.Parent().Parent().PersistentPreRun(cmd, args)
-
-		logger.Debug("creating promotion handler...")
-		hdl, err := handler.NewPromotionHandler(
-			handler.WithLambdaPayloadType(config.Lambda.PayloadType),
-			handler.WithAuthMode(config.GitHub.AuthMode),
-			handler.WithSSMKey(config.GitHub.SSMKey),
-			handler.WithToken(os.Getenv("GITHUB_TOKEN")),
-			handler.WithWebhookSecret(config.GitHub.WebhookSecret),
-			handler.WithContext(cmd.Context()),
-			handler.WithLogger(logger))
-		if err != nil {
-			return errors.Wrap(err, "failed to create promotion handler")
-		}
-		logger.Debug("creating runtime...")
-		promotionRuntime = runtime.NewRuntime(hdl,
-			runtime.WithLogger(logger.With("component", "runtime")))
 		return nil
 	},
 }
@@ -43,9 +27,11 @@ var lambdaCmd = &cobra.Command{
 var lambdaHTTPCmd = &cobra.Command{
 	Use: "http",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		config.Global.Mode = config.ModeLambdaHTTP
-		logger = logger.With("mode", config.Global.Mode)
+		if err := setup(cmd); err != nil {
+			return errors.Wrap(err, "failed to setup lambda")
+		}
 
+		logger = logger.With("mode", config.Global.Mode)
 		logger.Info("lambda starting...")
 		lambda.StartWithOptions(promotionRuntime.Lambda,
 			lambda.WithContext(cmd.Context()))
@@ -58,7 +44,10 @@ var lambdaHTTPCmd = &cobra.Command{
 var lambdaEventCmd = &cobra.Command{
 	Use: "event",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		config.Global.Mode = config.ModeLambdaEvent
+		if err := setup(cmd); err != nil {
+			return errors.Wrap(err, "failed to setup lambda")
+		}
+
 		logger = logger.With("mode", config.Global.Mode)
 
 		logger.Info("lambda starting...")
@@ -73,4 +62,23 @@ func init() {
 	lambdaCmd.AddCommand(lambdaHTTPCmd)
 
 	bindEnvMap(lambdaCmd, lambdaEnvMapString)
+}
+
+func setup(cmd *cobra.Command) error {
+	logger.Debug("creating promotion handler...")
+	hdl, err := handler.NewPromotionHandler(
+		handler.WithLambdaPayloadType(config.Lambda.PayloadType),
+		handler.WithAuthMode(config.GitHub.AuthMode),
+		handler.WithSSMKey(config.GitHub.SSMKey),
+		handler.WithToken(os.Getenv("GITHUB_TOKEN")),
+		handler.WithWebhookSecret(config.GitHub.WebhookSecret),
+		handler.WithContext(cmd.Context()),
+		handler.WithLogger(logger))
+	if err != nil {
+		return errors.Wrap(err, "failed to create promotion handler")
+	}
+	logger.Debug("creating runtime...")
+	promotionRuntime = runtime.NewRuntime(hdl,
+		runtime.WithLogger(logger.With("component", "runtime")))
+	return nil
 }
