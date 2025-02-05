@@ -18,8 +18,14 @@ var (
 var lambdaCmd = &cobra.Command{
 	Use: "lambda",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		cmd.Parent().Parent().PersistentPreRun(cmd, args)
-		return nil
+		parent := cmd.Parent()
+		for parent != nil {
+			if parent.PersistentPreRun != nil {
+				parent.PersistentPreRun(cmd, args)
+			}
+			parent = parent.Parent()
+		}
+		return setup(cmd)
 	},
 }
 
@@ -27,11 +33,6 @@ var lambdaCmd = &cobra.Command{
 var lambdaHTTPCmd = &cobra.Command{
 	Use: "http",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		if err := setup(cmd); err != nil {
-			return errors.Wrap(err, "failed to setup lambda")
-		}
-
-		logger = logger.With("mode", config.Global.Mode)
 		logger.Info("lambda starting...")
 		lambda.StartWithOptions(promotionRuntime.Lambda,
 			lambda.WithContext(cmd.Context()))
@@ -44,12 +45,6 @@ var lambdaHTTPCmd = &cobra.Command{
 var lambdaEventCmd = &cobra.Command{
 	Use: "event",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		if err := setup(cmd); err != nil {
-			return errors.Wrap(err, "failed to setup lambda")
-		}
-
-		logger = logger.With("mode", config.Global.Mode)
-
 		logger.Info("lambda starting...")
 		lambda.StartWithOptions(promotionRuntime.LambdaForEvent,
 			lambda.WithContext(cmd.Context()))

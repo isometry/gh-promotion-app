@@ -35,8 +35,8 @@ const (
 )
 
 type global struct {
-	// Mode is the runtime mode of the application. (service, lambda, lambda-event)
-	Mode string `yaml:"mode,omitempty" default:"lambda"`
+	// Mode is the runtime mode of the application. (service, lambda-http, lambda-event)
+	Mode string `yaml:"mode,omitempty" default:"lambda-http"`
 	// Logging is a struct that contains the logging configuration.
 	Logging struct {
 		// Verbosity is the verbosity level of the application. It represents slog levels.

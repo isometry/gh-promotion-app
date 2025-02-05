@@ -59,6 +59,18 @@ The `gh-promotion-app` can be run in three modes:
     go run main.go lambda event # or go run main.go --mode=lambda-event
     ```
     * `Input`: `EventBridge` / `CloudWatch` event which encapsulates the GitHub webhook payload in the `detail` field.
+
+> [!NOTE]
+> The incoming event expected values are as follows:
+> ```json
+> {
+>    "detail": <original_webhook_payload>,
+>    "detail-type": <webhook_payload_type>, (e.g. pull, pull_request, check_suite, etc.),
+>    "source": <your_custom_event_source>,
+>    ...
+> }
+> ```
+
 3. **service**: The application is deployed as a standalone service and listens for incoming HTTP requests.
     ```console
     go run main.go service # or go run main.go --mode=service

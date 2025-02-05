@@ -93,10 +93,10 @@ func (p *authValidatorProcessor) Process(req any) (bus *promotion.Bus, err error
 				Response: models.Response{Body: err.Error(), StatusCode: http.StatusForbidden},
 			}, promotion.NewInternalErrorf("failed to validate signature. error: %v", err)
 		}
+		p.logger.Debug("request body is valid")
 	} else {
 		p.logger.Debug("skipping webhook signature validation in lambda-event mode...")
 	}
-	p.logger.Debug("request body is valid")
 
 	// Add the delivery ID to the logger, now that we know the payload is valid
 	p.logger = p.logger.With(slog.String("deliveryID", deliveryID))
