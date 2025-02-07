@@ -48,6 +48,7 @@ func (p *fastForwarderPostProcessor) Process(req any) (bus *promotion.Bus, err e
 			bus.EventStatus = promotion.Skipped
 			return bus, err
 		}
+		p.logger.Debug("found promotion PR", slog.String("headRef", *bus.Context.HeadRef))
 	}
 
 	// @Note: deactivated to cope with API limits

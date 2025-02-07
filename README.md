@@ -45,18 +45,37 @@ It currently supports the following event types:
          alt="overview"/>
 </p>
 
-### Running
+### Running & Input
 
-The `gh-promotion-app` can be run in two modes:
+The `gh-promotion-app` can be run in three modes:
 
-1. **Lambda**: The application is deployed as an AWS Lambda function and is triggered by an API Gateway endpoint.
+1. **lambda-http**: The application is deployed as an AWS Lambda function and is triggered by an API Gateway endpoint.
     ```console
-    go run main.go lambda # or go run main.go --mode=lambda
+    go run main.go lambda http # or go run main.go --mode=lambda-http
     ```
-2. **Service**: The application is deployed as a standalone service and listens for incoming HTTP requests.
+   * `Input`: `HTTP` request containing the GitHub webhook payload w/ Headers.
+2. **lambda-event**: The application is deployed as an AWS Lambda function and is triggered an EventBridge rule.
+    ```console
+    go run main.go lambda event # or go run main.go --mode=lambda-event
+    ```
+    * `Input`: `EventBridge` / `CloudWatch` event which encapsulates the GitHub webhook payload in the `detail` field.
+
+> [!NOTE]
+> The incoming event expected values are as follows:
+> ```json
+> {
+>    "detail": <original_webhook_payload>,
+>    "detail-type": <webhook_payload_type>, (e.g. pull, pull_request, check_suite, etc.),
+>    "source": <your_custom_event_source>,
+>    ...
+> }
+> ```
+
+3. **service**: The application is deployed as a standalone service and listens for incoming HTTP requests.
     ```console
     go run main.go service # or go run main.go --mode=service
     ```
+    * `Input`: `HTTP` request containing the GitHub webhook payload w/ Headers.
 
 ### Feedback
 

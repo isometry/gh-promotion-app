@@ -3,13 +3,18 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"strings"
 
+	uGitHub "github.com/google/go-github/v68/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/aws"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/handler/processor"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/models"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
 	"github.com/pkg/errors"
@@ -158,6 +163,31 @@ func (h *Handler) Process(body []byte, headers map[string]string) (*promotion.Bu
 	}
 
 	return bus, nil
+}
+
+// ProcessEvent processes the incoming EventBridge event.
+func (h *Handler) ProcessEvent(event map[string]any) (*promotion.Bus, error) {
+	raw, err := json.Marshal(event)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal event. error: %w", err)
+	}
+	var e models.Event
+	if err = json.Unmarshal(raw, &e); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to EventBridge event. error: %w", err)
+	}
+
+	headers := map[string]string{
+		strings.ToLower(uGitHub.EventTypeHeader):  e.DetailType,
+		strings.ToLower(uGitHub.DeliveryIDHeader): e.ID,
+		"content-type": "application/json",
+	}
+
+	rawDetails, err := json.Marshal(e.Detail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal event details. error: %w", err)
+	}
+
+	return h.Process(rawDetails, headers)
 }
 
 // GetLambdaPayloadType returns the lambda payload type.

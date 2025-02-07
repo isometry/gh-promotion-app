@@ -73,6 +73,8 @@ func (p *checkSuiteEventProcessor) Process(req any) (bus *promotion.Bus, err err
 		if *pr.Head.SHA == *bus.Context.HeadSHA && bus.Context.Promoter.IsPromotionRequest(pr) {
 			bus.Context.BaseRef = helpers.NormaliseRefPtr(*pr.Base.Ref)
 			bus.Context.HeadRef = helpers.NormaliseRefPtr(*pr.Head.Ref)
+			bus.Context.HeadSHA = pr.Head.SHA
+			bus.Context.PullRequest = pr
 			break
 		}
 	}

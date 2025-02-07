@@ -35,14 +35,17 @@ var rootCmd = &cobra.Command{
 		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: config.Global.Logging.CallerTrace,
 			Level:     slog.LevelWarn - slog.Level(config.Global.Logging.Verbosity*4),
-		}))
+		})).With("mode", config.Global.Mode)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+
 		switch config.Global.Mode {
-		case "service":
+		case config.ModeService:
 			return serviceCmd.RunE(cmd, args)
-		case "lambda":
-			return lambdaCmd.RunE(cmd, args)
+		case config.ModeLambdaHTTP:
+			return chainCommands(cmd, args, lambdaCmd.PersistentPreRunE, lambdaHTTPCmd.RunE)
+		case config.ModeLambdaEvent:
+			return chainCommands(cmd, args, lambdaCmd.PersistentPreRunE, lambdaEventCmd.RunE)
 		default:
 			return fmt.Errorf("invalid mode: %s", config.Global.Mode)
 		}
@@ -77,4 +80,13 @@ func setupDynamicFlags() {
 	bindEnvMap(rootCmd, envMapBool)
 	bindEnvMap(rootCmd, envMapCount)
 	bindEnvMap(rootCmd, envMapStringSlice)
+}
+
+func chainCommands(cmd *cobra.Command, args []string, fns ...func(*cobra.Command, []string) error) error {
+	for _, fn := range fns {
+		if err := fn(cmd, args); err != nil {
+			return err
+		}
+	}
+	return nil
 }

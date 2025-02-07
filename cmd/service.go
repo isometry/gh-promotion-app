@@ -17,7 +17,6 @@ var serviceCmd = &cobra.Command{
 	Use:     "service",
 	Aliases: []string{"srv", "serve", "standalone", "server"},
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		logger = logger.With("mode", "service")
 		logger.Debug("creating promotion handler...")
 		hdl, err := handler.NewPromotionHandler(
 			handler.WithAuthMode(config.GitHub.AuthMode),
