@@ -8,7 +8,7 @@ import (
 var envMapString = map[*string]boundEnvVar[string]{
 	&config.Global.Mode: {
 		Name:        "mode",
-		Description: "The application runtime mode. Possible values are 'lambda' and 'service'",
+		Description: "The application runtime mode. Possible values are 'lambda-event', 'lambda-http' and 'service'",
 		Short:       helpers.Ptr("m"),
 	},
 	&config.GitHub.AuthMode: {

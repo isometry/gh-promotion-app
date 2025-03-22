@@ -3,7 +3,6 @@ package cmd
 import (
 	"os"
 
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/runtime"
@@ -15,48 +14,29 @@ var (
 	promotionRuntime *runtime.Runtime
 )
 
-var lambdaCmd = &cobra.Command{
-	Use: "lambda",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		parent := cmd.Parent()
-		for parent != nil {
-			if parent.PersistentPreRun != nil {
-				parent.PersistentPreRun(cmd, args)
+func cmdLambda() *cobra.Command {
+	cmd := &cobra.Command{
+		Use: "lambda",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			parent := cmd.Parent()
+			for parent != nil {
+				if parent.PersistentPreRun != nil {
+					parent.PersistentPreRun(cmd, args)
+				}
+				parent = parent.Parent()
 			}
-			parent = parent.Parent()
-		}
-		return setup(cmd)
-	},
-}
+			return setup(cmd)
+		},
+	}
 
-// lambdaHTTPCmd is the command for running the lambda-http mode.
-var lambdaHTTPCmd = &cobra.Command{
-	Use: "http",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		logger.Info("lambda starting...")
-		lambda.StartWithOptions(promotionRuntime.Lambda,
-			lambda.WithContext(cmd.Context()))
+	cmd.AddCommand(
+		cmdLambdaHTTP(),
+		cmdLambdaEvent(),
+	)
 
-		return nil
-	},
-}
+	bindEnvMap(cmd, lambdaEnvMapString)
 
-// lambdaEventCmd is the command for running the lambda in event mode.
-var lambdaEventCmd = &cobra.Command{
-	Use: "event",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		logger.Info("lambda starting...")
-		lambda.StartWithOptions(promotionRuntime.LambdaForEvent,
-			lambda.WithContext(cmd.Context()))
-		return nil
-	},
-}
-
-func init() {
-	lambdaCmd.AddCommand(lambdaEventCmd)
-	lambdaCmd.AddCommand(lambdaHTTPCmd)
-
-	bindEnvMap(lambdaCmd, lambdaEnvMapString)
+	return cmd
 }
 
 func setup(cmd *cobra.Command) error {
