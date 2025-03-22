@@ -25,9 +25,6 @@ linters-settings:
   gocyclo:
     min-complexity: 30
 
-  maligned:
-    suggest-new: true
-
   dupl:
     # tokens count to trigger issue, 150 by default
     threshold: 100
@@ -66,7 +63,6 @@ linters-settings:
     require-explanation: true
     require-specific: true
 
-
 linters:
   disable-all: true
   enable:
@@ -100,7 +96,6 @@ linters:
     - bugs
     - unused
   fast: false
-
 
 issues:
   exclude-rules:
@@ -147,5 +142,4 @@ issues:
 
   exclude-use-default: false
   new: false
-  max-per-linter: 0
   max-same-issues: 0
