@@ -37,14 +37,15 @@ func New() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch config.Global.Mode {
 			case config.ModeService:
-				return cmdService().RunE(cmd, args)
+				cmd.SetArgs([]string{"service"})
 			case config.ModeLambdaHTTP:
-				return chainCommands(cmd, args, cmdLambda().PersistentPreRunE, cmdLambdaHTTP().RunE)
+				cmd.SetArgs([]string{"lambda", "http"})
 			case config.ModeLambdaEvent:
-				return chainCommands(cmd, args, cmdLambda().PersistentPreRunE, cmdLambdaEvent().RunE)
+				cmd.SetArgs([]string{"lambda", "event"})
 			default:
 				return fmt.Errorf("invalid mode: %s", config.Global.Mode)
 			}
+			return cmd.Execute()
 		},
 	}
 
@@ -79,13 +80,4 @@ func setupDynamicFlags(cmd *cobra.Command) {
 	bindEnvMap(cmd, envMapBool)
 	bindEnvMap(cmd, envMapCount)
 	bindEnvMap(cmd, envMapStringSlice)
-}
-
-func chainCommands(cmd *cobra.Command, args []string, fns ...func(*cobra.Command, []string) error) error {
-	for _, fn := range fns {
-		if err := fn(cmd, args); err != nil {
-			return err
-		}
-	}
-	return nil
 }
