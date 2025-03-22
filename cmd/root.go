@@ -1,4 +1,4 @@
-// Package cmd provides the entrypoint for the gh-promotion-app.
+// Package cmd provides the entrypoint for the gh-promotion-app cli.
 package cmd
 
 import (
@@ -13,11 +13,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Execute runs the root command, handling command-line arguments and invoking the corresponding functionality.
-func Execute() error {
-	return rootCmd.Execute()
-}
-
 var (
 	configFilePath string
 	logger         *slog.Logger
@@ -29,32 +24,32 @@ type boundEnvVar[T argType] struct {
 	Hidden            bool
 }
 
-var rootCmd = &cobra.Command{
-	PersistentPreRun: func(_ *cobra.Command, _ []string) {
-		config.Global.Mode = strings.TrimSpace(config.Global.Mode)
-		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			AddSource: config.Global.Logging.CallerTrace,
-			Level:     slog.LevelWarn - slog.Level(config.Global.Logging.Verbosity*4),
-		})).With("mode", config.Global.Mode)
-	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+// New returns the root command for the gh-promotion-app.
+func New() *cobra.Command {
+	cmd := &cobra.Command{
+		PersistentPreRun: func(_ *cobra.Command, _ []string) {
+			config.Global.Mode = strings.TrimSpace(config.Global.Mode)
+			logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+				AddSource: config.Global.Logging.CallerTrace,
+				Level:     slog.LevelWarn - slog.Level(config.Global.Logging.Verbosity*4),
+			})).With("mode", config.Global.Mode)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch config.Global.Mode {
+			case config.ModeService:
+				return cmdService().RunE(cmd, args)
+			case config.ModeLambdaHTTP:
+				return chainCommands(cmd, args, cmdLambda().PersistentPreRunE, cmdLambdaHTTP().RunE)
+			case config.ModeLambdaEvent:
+				return chainCommands(cmd, args, cmdLambda().PersistentPreRunE, cmdLambdaEvent().RunE)
+			default:
+				return fmt.Errorf("invalid mode: %s", config.Global.Mode)
+			}
+		},
+	}
 
-		switch config.Global.Mode {
-		case config.ModeService:
-			return serviceCmd.RunE(cmd, args)
-		case config.ModeLambdaHTTP:
-			return chainCommands(cmd, args, lambdaCmd.PersistentPreRunE, lambdaHTTPCmd.RunE)
-		case config.ModeLambdaEvent:
-			return chainCommands(cmd, args, lambdaCmd.PersistentPreRunE, lambdaEventCmd.RunE)
-		default:
-			return fmt.Errorf("invalid mode: %s", config.Global.Mode)
-		}
-	},
-}
-
-func init() {
 	// Root command flags
-	rootCmd.PersistentFlags().StringVarP(&configFilePath, "config", "c", "config.yaml", "path to the configuration file")
+	cmd.PersistentFlags().StringVarP(&configFilePath, "config", "c", "config.yaml", "path to the configuration file")
 
 	// Configuration loading & defaults
 	if err := errors.Join(
@@ -65,21 +60,25 @@ func init() {
 	}
 
 	// Dynamic flags
-	setupDynamicFlags()
+	setupDynamicFlags(cmd)
 
 	// Subcommands
-	rootCmd.AddCommand(serviceCmd)
-	rootCmd.AddCommand(lambdaCmd)
+	cmd.AddCommand(
+		cmdLambda(),
+		cmdService(),
+	)
+
+	return cmd
 }
 
-func setupDynamicFlags() {
+func setupDynamicFlags(cmd *cobra.Command) {
 	viper.AutomaticEnv()
 	viper.EnvKeyReplacer(replacer)
 
-	bindEnvMap(rootCmd, envMapString)
-	bindEnvMap(rootCmd, envMapBool)
-	bindEnvMap(rootCmd, envMapCount)
-	bindEnvMap(rootCmd, envMapStringSlice)
+	bindEnvMap(cmd, envMapString)
+	bindEnvMap(cmd, envMapBool)
+	bindEnvMap(cmd, envMapCount)
+	bindEnvMap(cmd, envMapStringSlice)
 }
 
 func chainCommands(cmd *cobra.Command, args []string, fns ...func(*cobra.Command, []string) error) error {
