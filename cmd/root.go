@@ -34,7 +34,7 @@ func New() *cobra.Command {
 				Level:     slog.LevelWarn - slog.Level(config.Global.Logging.Verbosity*4),
 			})).With("mode", config.Global.Mode)
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			switch config.Global.Mode {
 			case config.ModeService:
 				cmd.SetArgs([]string{"service"})
