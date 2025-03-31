@@ -191,7 +191,7 @@ Personal access token w/ permissions compatible with the selected configuration.
 At this time, the application requires that the GitHub app installation secrets are stored in AWS SSM.
 
 The supported format is as follows:
-    
+
 ```json
 {
     "app_id": "<int64>",
@@ -229,7 +229,7 @@ Available Commands:
   -A, --github-auth-mode string                        [GITHUB_AUTH_MODE] Authentication credentials provider. Supported values are 'token' and 'ssm'. (default "ssm")
       --github-webhook-secret string                   [GITHUB_WEBHOOK_SECRET] The secret to use when validating incoming GitHub webhook payloads. If not specified, no validation is performed
   -h, --help                                           help for this command
-      --mode string                                    [MODE] The application runtime mode. Possible values are 'lambda' and 'service' (default "lambda")
+      --mode string                                    [MODE] The application runtime mode. Possible values are 'lambda-event', 'lambda-http' and 'service' (default "lambda")
       --promotion-default-stages strings               [PROMOTION_DEFAULT_STAGES] The default promotion stages (default [sdasd])
       --promotion-dynamic                              [PROMOTION_DYNAMIC] Enable dynamic promotion (default true)
       --promotion-dynamic-custom-property-key string   [DYNAMIC_PROMOTION_KEY] The key to use when fetching the dynamic promoter configuration (default "gitops-promotion-path")
