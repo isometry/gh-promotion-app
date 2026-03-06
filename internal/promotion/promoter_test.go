@@ -151,6 +151,91 @@ func TestIsPromotableRef(t *testing.T) {
 	}
 }
 
+func TestIsRollbackRef(t *testing.T) {
+	testCases := []struct {
+		Name          string
+		Stages        []string
+		Ref           string
+		Prefix        string
+		ExpectedStage string
+		ExpectedOk    bool
+	}{
+		{
+			Name:          "rollback_last_stage",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/rollback-production",
+			Prefix:        "rollback-",
+			ExpectedStage: "production",
+			ExpectedOk:    true,
+		},
+		{
+			Name:          "rollback_last_stage_short_ref",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "rollback-production",
+			Prefix:        "rollback-",
+			ExpectedStage: "production",
+			ExpectedOk:    true,
+		},
+		{
+			Name:          "rollback_non_last_stage",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/rollback-canary",
+			Prefix:        "rollback-",
+			ExpectedStage: "",
+			ExpectedOk:    false,
+		},
+		{
+			Name:          "rollback_first_stage",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/rollback-main",
+			Prefix:        "rollback-",
+			ExpectedStage: "",
+			ExpectedOk:    false,
+		},
+		{
+			Name:          "non_rollback_branch",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/feature",
+			Prefix:        "rollback-",
+			ExpectedStage: "",
+			ExpectedOk:    false,
+		},
+		{
+			Name:          "promotable_ref",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/main",
+			Prefix:        "rollback-",
+			ExpectedStage: "",
+			ExpectedOk:    false,
+		},
+		{
+			Name:          "custom_prefix",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/revert-production",
+			Prefix:        "revert-",
+			ExpectedStage: "production",
+			ExpectedOk:    true,
+		},
+		{
+			Name:          "single_stage_promoter",
+			Stages:        []string{"main"},
+			Ref:           "rollback-main",
+			Prefix:        "rollback-",
+			ExpectedStage: "main",
+			ExpectedOk:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			promoter := promotion.NewStagePromoter("test", tc.Stages)
+			stage, ok := promoter.IsRollbackRef(tc.Ref, tc.Prefix)
+			assert.Equal(t, tc.ExpectedStage, stage)
+			assert.Equal(t, tc.ExpectedOk, ok)
+		})
+	}
+}
+
 func TestNewDynamicPromoter(t *testing.T) {
 	testCases := []struct {
 		Name           string

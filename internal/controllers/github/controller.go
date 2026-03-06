@@ -345,6 +345,39 @@ func (g *Controller) FastForwardRefToSha(pCtx *promotion.Context) error {
 	return nil
 }
 
+// CompareCommits compares two commits and returns the comparison result.
+func (g *Controller) CompareCommits(pCtx *promotion.Context, base, head string) (*github.CommitsComparison, error) {
+	g.logger.Debug("comparing commits...", slog.String("base", base), slog.String("head", head), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
+	comparison, _, err := pCtx.ClientV3.Repositories.CompareCommits(g.ctx, *pCtx.Owner, *pCtx.Repository, base, head, nil)
+	if err != nil {
+		g.logger.Error("failed to compare commits", slog.Any("error", err))
+		return nil, err
+	}
+
+	g.logger.Debug("compare result", slog.String("status", comparison.GetStatus()), slog.Int("ahead_by", comparison.GetAheadBy()), slog.Int("behind_by", comparison.GetBehindBy()))
+	return comparison, nil
+}
+
+// ForceUpdateRefToSha forces a ref update to a specific SHA, used for rollback operations.
+func (g *Controller) ForceUpdateRefToSha(pCtx *promotion.Context) error {
+	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
+	ctxLogger.Debug("attempting force update...", slog.String("baseRef", *pCtx.BaseRef), slog.String("headSHA", *pCtx.HeadSHA))
+	reference := github.Reference{
+		Ref: helpers.NormaliseFullRefPtr(*pCtx.BaseRef),
+		Object: &github.GitObject{
+			SHA: pCtx.HeadSHA,
+		},
+	}
+	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, true)
+	if err != nil {
+		ctxLogger.Error("failed force update", slog.Any("error", err))
+		return err
+	}
+
+	ctxLogger.Debug("successful force update")
+	return nil
+}
+
 // CommitStatus is a type to represent the commit status.
 type CommitStatus string
 

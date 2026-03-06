@@ -97,6 +97,17 @@ func (sp *Promoter) IsPromotableRef(ref string) (string, bool) {
 	return "", false
 }
 
+// IsRollbackRef checks if the given ref is a rollback branch targeting the last promotion stage.
+func (sp *Promoter) IsRollbackRef(ref string, prefix string) (string, bool) {
+	normalizedRef := helpers.NormaliseRef(ref)
+	lastStage := sp.Stages[len(sp.Stages)-1]
+	if normalizedRef == prefix+lastStage {
+		return lastStage, true
+	}
+
+	return "", false
+}
+
 //go:embed templates/mermaid.md.tmpl
 var mermaidTemplate string
 

@@ -78,7 +78,7 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 		processor.NewDynamicPromotionPreProcessor(_inst.githubController),
 	}
 	_inst.processors = map[event.Type][]processor.Processor{
-		event.Push:              {processor.NewPushEventProcessor(_inst.githubController)},
+		event.Push:              {processor.NewPushEventProcessor(_inst.githubController), processor.NewRollbackEventProcessor(_inst.githubController)},
 		event.PullRequest:       {processor.NewPullRequestEventProcessor(_inst.githubController)},
 		event.PullRequestReview: {processor.NewPullRequestReviewEventProcessor(_inst.githubController)},
 		event.CheckSuite:        {processor.NewCheckSuiteEventProcessor(_inst.githubController)},
