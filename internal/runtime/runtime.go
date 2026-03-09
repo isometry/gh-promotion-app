@@ -1,4 +1,6 @@
 // Package runtime provides the runtime for the application.
+//
+//nolint:revive // False positive
 package runtime
 
 import (
@@ -52,12 +54,12 @@ func (r *Runtime) Lambda(req models.Request) (response any, err error) {
 		headers[k] = strings.ToLower(v)
 	}
 
-	bus, err := r.Handler.Process([]byte(req.Body), headers)
+	bus, err := r.Process([]byte(req.Body), headers)
 	if err != nil {
 		return nil, err
 	}
 
-	payloadType := r.Handler.GetLambdaPayloadType()
+	payloadType := r.GetLambdaPayloadType()
 	switch payloadType {
 	case "api-gateway-v1":
 		return events.APIGatewayProxyResponse{
@@ -83,7 +85,7 @@ func (r *Runtime) Lambda(req models.Request) (response any, err error) {
 func (r *Runtime) LambdaForEvent(event map[string]any) (any, error) {
 	r.logger.Info("received event", slog.Any("event", event))
 
-	bus, err := r.Handler.ProcessEvent(event)
+	bus, err := r.ProcessEvent(event)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +118,7 @@ func (r *Runtime) Service(rw http.ResponseWriter, req *http.Request) {
 		helpers.RespondHTTP(rw, models.Response{StatusCode: http.StatusInternalServerError}, err)
 		return
 	}
-	bus, err := r.Handler.Process(body, headers)
+	bus, err := r.Process(body, headers)
 	if err != nil {
 		r.logger.Error("failed to process request", slog.Any("error", err))
 		helpers.RespondHTTP(rw, models.Response{StatusCode: http.StatusInternalServerError}, err)
