@@ -97,6 +97,25 @@ func (sp *Promoter) IsPromotableRef(ref string) (string, bool) {
 	return "", false
 }
 
+// IsRollbackRef checks if the given ref is a rollback branch targeting the last promotion stage.
+// It returns the list of stages that must be rolled back. Stages listed in cascadeStages are
+// included when they belong to the promoter and are not the last stage itself.
+func (sp *Promoter) IsRollbackRef(ref string, prefix string, cascadeStages []string) ([]string, bool) {
+	normalizedRef := helpers.NormaliseRef(ref)
+	lastStage := sp.Stages[len(sp.Stages)-1]
+	if normalizedRef != prefix+lastStage {
+		return nil, false
+	}
+
+	stages := []string{lastStage}
+	for _, cs := range cascadeStages {
+		if slices.Contains(sp.Stages, cs) && cs != lastStage {
+			stages = append(stages, cs)
+		}
+	}
+	return stages, true
+}
+
 //go:embed templates/mermaid.md.tmpl
 var mermaidTemplate string
 

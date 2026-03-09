@@ -73,6 +73,15 @@ type promotion struct {
 		// CreateTargetRef is a flag that enables the creation of missing target branches.
 		CreateTargetRef bool `yaml:"createTargetRef,omitempty" default:"true"`
 	} `yaml:"push,omitempty"`
+	// Rollback is a struct that contains the configuration for rollback operations.
+	Rollback struct {
+		// Enabled is a flag that enables rollback support for the last promotion stage.
+		Enabled bool `yaml:"enabled,omitempty" default:"false"`
+		// Prefix is the branch name prefix used to identify rollback branches.
+		Prefix string `yaml:"prefix,omitempty" default:"rollback-"`
+		// CascadeStages lists additional stages to roll back alongside the last stage.
+		CascadeStages []string `yaml:"cascadeStages,omitempty"`
+	} `yaml:"rollback,omitempty"`
 	// Feedback is a struct that contains the configuration for feedback.
 	Feedback struct {
 		CommitStatus struct {

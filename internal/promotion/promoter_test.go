@@ -151,6 +151,150 @@ func TestIsPromotableRef(t *testing.T) {
 	}
 }
 
+func TestIsRollbackRef(t *testing.T) {
+	testCases := []struct {
+		Name           string
+		Stages         []string
+		Ref            string
+		Prefix         string
+		CascadeStages  []string
+		ExpectedStages []string
+		ExpectedOk     bool
+	}{
+		{
+			Name:           "rollback_last_stage_cascades_canary",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
+			ExpectedStages: []string{"production", "canary"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "rollback_last_stage_short_ref_cascades_canary",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
+			ExpectedStages: []string{"production", "canary"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "rollback_non_last_stage",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "refs/heads/rollback-canary",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
+			ExpectedStages: nil,
+			ExpectedOk:     false,
+		},
+		{
+			Name:          "rollback_first_stage",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/rollback-main",
+			Prefix:        "rollback-",
+			CascadeStages: []string{"canary"},
+			ExpectedStages: nil,
+			ExpectedOk:     false,
+		},
+		{
+			Name:           "non_rollback_branch",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "refs/heads/feature",
+			Prefix:         "rollback-",
+			ExpectedStages: nil,
+			ExpectedOk:     false,
+		},
+		{
+			Name:           "promotable_ref",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "refs/heads/main",
+			Prefix:         "rollback-",
+			ExpectedStages: nil,
+			ExpectedOk:     false,
+		},
+		{
+			Name:           "custom_prefix_cascades_canary",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "refs/heads/revert-production",
+			Prefix:         "revert-",
+			CascadeStages:  []string{"canary"},
+			ExpectedStages: []string{"production", "canary"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "single_stage_promoter",
+			Stages:         []string{"main"},
+			Ref:            "rollback-main",
+			Prefix:         "rollback-",
+			ExpectedStages: []string{"main"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "three_stages_with_canary_cascades",
+			Stages:         []string{"main", "canary", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
+			ExpectedStages: []string{"production", "canary"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "three_stages_without_canary_no_cascade",
+			Stages:         []string{"main", "staging", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
+			ExpectedStages: []string{"production"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "two_stages_no_cascade",
+			Stages:         []string{"main", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			ExpectedStages: []string{"production"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "cascade_ignores_last_stage",
+			Stages:         []string{"main", "staging", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"production"},
+			ExpectedStages: []string{"production"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "cascade_multiple_stages",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary", "staging"},
+			ExpectedStages: []string{"production", "canary", "staging"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "cascade_unknown_stage_ignored",
+			Stages:         []string{"main", "staging", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"nonexistent"},
+			ExpectedStages: []string{"production"},
+			ExpectedOk:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			promoter := promotion.NewStagePromoter("test", tc.Stages)
+			stages, ok := promoter.IsRollbackRef(tc.Ref, tc.Prefix, tc.CascadeStages)
+			assert.Equal(t, tc.ExpectedStages, stages)
+			assert.Equal(t, tc.ExpectedOk, ok)
+		})
+	}
+}
+
 func TestNewDynamicPromoter(t *testing.T) {
 	testCases := []struct {
 		Name           string
