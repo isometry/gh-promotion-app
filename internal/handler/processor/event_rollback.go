@@ -50,19 +50,21 @@ func (p *rollbackEventProcessor) Process(req any) (bus *promotion.Bus, err error
 		return bus, nil
 	}
 
-	targetStage, isRollback := bus.Context.Promoter.IsRollbackRef(*e.Ref, config.Promotion.Rollback.Prefix)
+	targetStages, isRollback := bus.Context.Promoter.IsRollbackRef(*e.Ref, config.Promotion.Rollback.Prefix)
 	if !isRollback {
 		p.logger.Debug("ignoring push event on non-rollback branch", slog.String("ref", *e.Ref))
 		return bus, nil
 	}
 
-	p.logger.Info("rollback detected", slog.String("ref", *e.Ref), slog.String("targetStage", targetStage))
+	p.logger.Info("rollback detected", slog.String("ref", *e.Ref), slog.Any("targetStages", targetStages))
 
+	rollbackRef := helpers.NormaliseRef(*e.Ref)
 	bus.Context.HeadRef = e.Ref
 	bus.Context.HeadSHA = e.After
-	bus.Context.BaseRef = helpers.NormaliseFullRefPtr(targetStage)
 
-	comparison, err := p.githubController.CompareCommits(bus.Context, helpers.NormaliseRef(*e.Ref), targetStage)
+	// Validate the rollback branch against the primary target before modifying any branch
+	primaryStage := targetStages[0]
+	comparison, err := p.githubController.CompareCommits(bus.Context, rollbackRef, primaryStage)
 	if err != nil {
 		p.logger.Error("failed to compare commits", slog.Any("error", err))
 		bus.Response = models.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}
@@ -76,18 +78,24 @@ func (p *rollbackEventProcessor) Process(req any) (bus *promotion.Bus, err error
 		bus.Response = models.Response{Body: msg, StatusCode: http.StatusUnprocessableEntity}
 		return bus, promotion.NewInternalError(msg)
 	case "identical":
-		p.logger.Info("rollback branch is identical to target stage, nothing to do")
+		p.logger.Info("rollback branch is identical to primary stage, nothing to do")
 		bus.EventStatus = promotion.Skipped
 		return bus, nil
 	}
 
-	if err = p.githubController.ForceUpdateRefToSha(bus.Context); err != nil {
-		p.logger.Error("failed to force update ref", slog.Any("error", err))
-		bus.Response = models.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}
-		return bus, err
+	// Roll back all target stages to the rollback commit
+	for _, stage := range targetStages {
+		stageLogger := p.logger.With(slog.String("stage", stage))
+		bus.Context.BaseRef = helpers.NormaliseFullRefPtr(stage)
+
+		if err = p.githubController.ForceUpdateRefToSha(bus.Context); err != nil {
+			stageLogger.Error("failed to force update ref", slog.Any("error", err))
+			bus.Response = models.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}
+			return bus, err
+		}
+		stageLogger.Info("rollback complete", slog.String("headSHA", *e.After))
 	}
 
-	p.logger.Info("rollback complete", slog.String("targetStage", targetStage), slog.String("headSHA", *e.After))
 	bus.EventStatus = promotion.Skipped
 	return bus, nil
 }

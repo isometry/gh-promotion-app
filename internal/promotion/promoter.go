@@ -98,14 +98,23 @@ func (sp *Promoter) IsPromotableRef(ref string) (string, bool) {
 }
 
 // IsRollbackRef checks if the given ref is a rollback branch targeting the last promotion stage.
-func (sp *Promoter) IsRollbackRef(ref string, prefix string) (string, bool) {
+// It returns the list of stages that must be rolled back. The penultimate stage is included
+// only when it is named "canary".
+func (sp *Promoter) IsRollbackRef(ref string, prefix string) ([]string, bool) {
 	normalizedRef := helpers.NormaliseRef(ref)
 	lastStage := sp.Stages[len(sp.Stages)-1]
-	if normalizedRef == prefix+lastStage {
-		return lastStage, true
+	if normalizedRef != prefix+lastStage {
+		return nil, false
 	}
 
-	return "", false
+	stages := []string{lastStage}
+	if len(sp.Stages) >= 3 {
+		penultimate := sp.Stages[len(sp.Stages)-2]
+		if penultimate == "canary" {
+			stages = append(stages, penultimate)
+		}
+	}
+	return stages, true
 }
 
 //go:embed templates/mermaid.md.tmpl
