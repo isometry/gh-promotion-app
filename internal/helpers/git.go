@@ -17,7 +17,7 @@ func NormaliseRefPtr[S string | *string](ref S) *string {
 func NormaliseRef[S string | *string](ref S) string {
 	rv := reflect.ValueOf(ref)
 	r := rv.String()
-	if rv.Type().Kind() == reflect.Ptr {
+	if rv.Type().Kind() == reflect.Pointer {
 		r = rv.Elem().String()
 	}
 

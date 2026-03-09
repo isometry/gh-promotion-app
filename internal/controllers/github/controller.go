@@ -82,7 +82,7 @@ type Controller struct {
 // Credentials is a helper struct to hold the Controller credentials.
 type Credentials struct {
 	AppID         int64                     `json:"app_id,omitempty"`
-	PrivateKey    string                    `json:"private_key,omitempty"`
+	PrivateKey    string                    `json:"private_key,omitempty"` //nolint:gosec // Private key is required for app authentication, not logged or exposed.
 	WebhookSecret *validation.WebhookSecret `json:"webhook_secret"`
 	Token         string                    `json:"token,omitempty"`
 }
@@ -314,8 +314,8 @@ func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest,
 		Title:               g.RequestTitle(*pCtx),
 		Head:                pCtx.HeadRef,
 		Base:                pCtx.BaseRef,
-		MaintainerCanModify: github.Ptr(false),
-		Draft:               github.Ptr(draftMode),
+		MaintainerCanModify: new(false),
+		Draft:               new(draftMode),
 	})
 
 	if err != nil {
@@ -410,7 +410,7 @@ func (g *Controller) SendPromotionFeedbackCommitStatus(bus *promotion.Bus, commi
 	status := &github.RepoStatus{
 		Description: msg,
 		Context:     contextValue,
-		State:       github.Ptr(string(commitStatus)),
+		State:       new(string(commitStatus)),
 		TargetURL:   pCtx.PullRequest.HTMLURL,
 	}
 
@@ -493,14 +493,14 @@ func (g *Controller) SendPromotionFeedbackCheckRun(bus *promotion.Bus, conclusio
 		feedbackLogger.Error("failed to execute check-run template", slog.Any("error", err))
 		return promotion.NewInternalErrorf("failed to execute check-run template: %v", err)
 	}
-	textMessage = github.Ptr(textBuffer.String())
+	textMessage = new(textBuffer.String())
 
 	now := time.Now().UTC()
 	checkRunOpts := github.CreateCheckRunOptions{
 		Name:        *nameValue,
 		HeadSHA:     *pCtx.HeadSHA,
-		Status:      github.Ptr(string(CheckRunStatusCompleted)),
-		Conclusion:  github.Ptr(string(conclusion)),
+		Status:      new(string(CheckRunStatusCompleted)),
+		Conclusion:  new(string(conclusion)),
 		CompletedAt: &github.Timestamp{Time: now},
 		Output: &github.CheckRunOutput{
 			Title:   msg,

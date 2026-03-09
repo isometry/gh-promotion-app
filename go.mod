@@ -1,8 +1,6 @@
 module github.com/isometry/gh-promotion-app
 
-go 1.24.0
-
-toolchain go1.24.1
+go 1.26.1
 
 require (
 	github.com/aws/aws-lambda-go v1.52.0
