@@ -4,8 +4,8 @@ on:
   workflow_call:
 
 env:
-  GO_VERSION: 'stable'
-  GOLANGCI_VERSION: 'latest'
+  GO_VERSION: "stable"
+  GOLANGCI_VERSION: "latest"
 
 jobs:
   Lint:
@@ -24,10 +24,8 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          only-new-issues: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          version: ${{ env.GOLANGCI_VERSION }}
-          args: '-c .golangci.yaml'
+          version: latest
+          args: "-c .golangci.yaml ./..."
   Validate:
     runs-on: ubuntu-latest
     timeout-minutes: 2
