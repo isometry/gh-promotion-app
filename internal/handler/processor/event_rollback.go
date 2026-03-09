@@ -1,9 +1,13 @@
 package processor
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
+	backoff "github.com/cenkalti/backoff/v5"
 	"github.com/google/go-github/v68/github"
 	"github.com/isometry/gh-promotion-app/internal/config"
 	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
@@ -11,6 +15,8 @@ import (
 	"github.com/isometry/gh-promotion-app/internal/models"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 )
+
+const rollbackMaxRetries = 3
 
 type rollbackEventProcessor struct {
 	logger           *slog.Logger
@@ -50,7 +56,7 @@ func (p *rollbackEventProcessor) Process(req any) (bus *promotion.Bus, err error
 		return bus, nil
 	}
 
-	targetStages, isRollback := bus.Context.Promoter.IsRollbackRef(*e.Ref, config.Promotion.Rollback.Prefix)
+	targetStages, isRollback := bus.Context.Promoter.IsRollbackRef(*e.Ref, config.Promotion.Rollback.Prefix, config.Promotion.Rollback.CascadeStages)
 	if !isRollback {
 		p.logger.Debug("ignoring push event on non-rollback branch", slog.String("ref", *e.Ref))
 		return bus, nil
@@ -72,8 +78,13 @@ func (p *rollbackEventProcessor) Process(req any) (bus *promotion.Bus, err error
 	}
 
 	switch comparison.GetStatus() {
-	case "behind", "diverged":
-		msg := "rollback rejected: rollback branch is not behind the target stage"
+	case "behind":
+		msg := "rollback rejected: rollback branch is behind the target stage"
+		p.logger.Error(msg, slog.String("status", comparison.GetStatus()))
+		bus.Response = models.Response{Body: msg, StatusCode: http.StatusUnprocessableEntity}
+		return bus, promotion.NewInternalError(msg)
+	case "diverged":
+		msg := "rollback rejected: rollback branch has diverged from the target stage"
 		p.logger.Error(msg, slog.String("status", comparison.GetStatus()))
 		bus.Response = models.Response{Body: msg, StatusCode: http.StatusUnprocessableEntity}
 		return bus, promotion.NewInternalError(msg)
@@ -84,18 +95,29 @@ func (p *rollbackEventProcessor) Process(req any) (bus *promotion.Bus, err error
 	}
 
 	// Roll back all target stages to the rollback commit
+	var succeeded []string
 	for _, stage := range targetStages {
 		stageLogger := p.logger.With(slog.String("stage", stage))
 		bus.Context.BaseRef = helpers.NormaliseFullRefPtr(stage)
 
-		if err = p.githubController.ForceUpdateRefToSha(bus.Context); err != nil {
-			stageLogger.Error("failed to force update ref", slog.Any("error", err))
-			bus.Response = models.Response{Body: err.Error(), StatusCode: http.StatusInternalServerError}
-			return bus, err
+		_, err = backoff.Retry(context.Background(), func() (struct{}, error) {
+			return struct{}{}, p.githubController.ForceUpdateRefToSha(bus.Context)
+		},
+			backoff.WithMaxTries(rollbackMaxRetries),
+			backoff.WithNotify(func(err error, d time.Duration) {
+				stageLogger.Warn("retrying force update ref", slog.Any("error", err), slog.Duration("backoff", d))
+			}),
+		)
+		if err != nil {
+			msg := fmt.Sprintf("partial rollback: succeeded=%v, failed=%s: %v", succeeded, stage, err)
+			stageLogger.Error(msg)
+			bus.Response = models.Response{Body: msg, StatusCode: http.StatusInternalServerError}
+			return bus, promotion.NewInternalError(msg)
 		}
+		succeeded = append(succeeded, stage)
 		stageLogger.Info("rollback complete", slog.String("headSHA", *e.After))
 	}
 
-	bus.EventStatus = promotion.Skipped
+	bus.EventStatus = promotion.Rollback
 	return bus, nil
 }

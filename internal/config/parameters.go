@@ -79,6 +79,8 @@ type promotion struct {
 		Enabled bool `yaml:"enabled,omitempty" default:"false"`
 		// Prefix is the branch name prefix used to identify rollback branches.
 		Prefix string `yaml:"prefix,omitempty" default:"rollback-"`
+		// CascadeStages lists additional stages to roll back alongside the last stage.
+		CascadeStages []string `yaml:"cascadeStages,omitempty"`
 	} `yaml:"rollback,omitempty"`
 	// Feedback is a struct that contains the configuration for feedback.
 	Feedback struct {

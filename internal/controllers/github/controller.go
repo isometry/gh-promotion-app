@@ -327,22 +327,7 @@ func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest,
 
 // FastForwardRefToSha pushes a commit to a ref, used to merge an open pull request via fast-forward.
 func (g *Controller) FastForwardRefToSha(pCtx *promotion.Context) error {
-	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
-	ctxLogger.Debug("attempting fast forward...", slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
-	reference := github.Reference{
-		Ref: helpers.NormaliseFullRefPtr(*pCtx.BaseRef),
-		Object: &github.GitObject{
-			SHA: pCtx.HeadSHA,
-		},
-	}
-	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, false)
-	if err != nil {
-		ctxLogger.Error("failed fast forward", slog.Any("error", err))
-		return err
-	}
-
-	ctxLogger.Debug("successful fast forward")
-	return nil
+	return g.updateRefToSha(pCtx, false)
 }
 
 // CompareCommits compares two commits and returns the comparison result.
@@ -360,21 +345,28 @@ func (g *Controller) CompareCommits(pCtx *promotion.Context, base, head string) 
 
 // ForceUpdateRefToSha forces a ref update to a specific SHA, used for rollback operations.
 func (g *Controller) ForceUpdateRefToSha(pCtx *promotion.Context) error {
+	return g.updateRefToSha(pCtx, true)
+}
+
+func (g *Controller) updateRefToSha(pCtx *promotion.Context, force bool) error {
+	action := "fast forward"
+	if force {
+		action = "force update"
+	}
 	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
-	ctxLogger.Debug("attempting force update...", slog.String("baseRef", *pCtx.BaseRef), slog.String("headSHA", *pCtx.HeadSHA))
+	ctxLogger.Debug(fmt.Sprintf("attempting %s...", action), slog.String("baseRef", *pCtx.BaseRef), slog.String("headSHA", *pCtx.HeadSHA))
 	reference := github.Reference{
 		Ref: helpers.NormaliseFullRefPtr(*pCtx.BaseRef),
 		Object: &github.GitObject{
 			SHA: pCtx.HeadSHA,
 		},
 	}
-	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, true)
+	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, force)
 	if err != nil {
-		ctxLogger.Error("failed force update", slog.Any("error", err))
+		ctxLogger.Error(fmt.Sprintf("failed %s", action), slog.Any("error", err))
 		return err
 	}
-
-	ctxLogger.Debug("successful force update")
+	ctxLogger.Debug(fmt.Sprintf("successful %s", action))
 	return nil
 }
 
@@ -567,8 +559,8 @@ func (g *Controller) processPromotionFeedback(bus *promotion.Bus, logger *slog.L
 		return nil, nil
 	}
 
-	if pCtx.EventType == promotion.Skipped {
-		logger.Debug("ignoring promotion feedback request due to skipped event")
+	if pCtx.EventType == promotion.Skipped || pCtx.EventType == promotion.Rollback {
+		logger.Debug("ignoring promotion feedback request due to skipped or rollback event")
 		return nil, nil
 	}
 

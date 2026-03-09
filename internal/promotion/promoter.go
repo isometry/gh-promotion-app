@@ -98,9 +98,9 @@ func (sp *Promoter) IsPromotableRef(ref string) (string, bool) {
 }
 
 // IsRollbackRef checks if the given ref is a rollback branch targeting the last promotion stage.
-// It returns the list of stages that must be rolled back. The penultimate stage is included
-// only when it is named "canary".
-func (sp *Promoter) IsRollbackRef(ref string, prefix string) ([]string, bool) {
+// It returns the list of stages that must be rolled back. Stages listed in cascadeStages are
+// included when they belong to the promoter and are not the last stage itself.
+func (sp *Promoter) IsRollbackRef(ref string, prefix string, cascadeStages []string) ([]string, bool) {
 	normalizedRef := helpers.NormaliseRef(ref)
 	lastStage := sp.Stages[len(sp.Stages)-1]
 	if normalizedRef != prefix+lastStage {
@@ -108,10 +108,9 @@ func (sp *Promoter) IsRollbackRef(ref string, prefix string) ([]string, bool) {
 	}
 
 	stages := []string{lastStage}
-	if len(sp.Stages) >= 3 {
-		penultimate := sp.Stages[len(sp.Stages)-2]
-		if penultimate == "canary" {
-			stages = append(stages, penultimate)
+	for _, cs := range cascadeStages {
+		if slices.Contains(sp.Stages, cs) && cs != lastStage {
+			stages = append(stages, cs)
 		}
 	}
 	return stages, true

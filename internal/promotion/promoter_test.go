@@ -157,6 +157,7 @@ func TestIsRollbackRef(t *testing.T) {
 		Stages         []string
 		Ref            string
 		Prefix         string
+		CascadeStages  []string
 		ExpectedStages []string
 		ExpectedOk     bool
 	}{
@@ -165,6 +166,7 @@ func TestIsRollbackRef(t *testing.T) {
 			Stages:         []string{"main", "staging", "canary", "production"},
 			Ref:            "refs/heads/rollback-production",
 			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
 			ExpectedStages: []string{"production", "canary"},
 			ExpectedOk:     true,
 		},
@@ -173,6 +175,7 @@ func TestIsRollbackRef(t *testing.T) {
 			Stages:         []string{"main", "staging", "canary", "production"},
 			Ref:            "rollback-production",
 			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
 			ExpectedStages: []string{"production", "canary"},
 			ExpectedOk:     true,
 		},
@@ -181,14 +184,16 @@ func TestIsRollbackRef(t *testing.T) {
 			Stages:         []string{"main", "staging", "canary", "production"},
 			Ref:            "refs/heads/rollback-canary",
 			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
 			ExpectedStages: nil,
 			ExpectedOk:     false,
 		},
 		{
-			Name:           "rollback_first_stage",
-			Stages:         []string{"main", "staging", "canary", "production"},
-			Ref:            "refs/heads/rollback-main",
-			Prefix:         "rollback-",
+			Name:          "rollback_first_stage",
+			Stages:        []string{"main", "staging", "canary", "production"},
+			Ref:           "refs/heads/rollback-main",
+			Prefix:        "rollback-",
+			CascadeStages: []string{"canary"},
 			ExpectedStages: nil,
 			ExpectedOk:     false,
 		},
@@ -213,6 +218,7 @@ func TestIsRollbackRef(t *testing.T) {
 			Stages:         []string{"main", "staging", "canary", "production"},
 			Ref:            "refs/heads/revert-production",
 			Prefix:         "revert-",
+			CascadeStages:  []string{"canary"},
 			ExpectedStages: []string{"production", "canary"},
 			ExpectedOk:     true,
 		},
@@ -229,6 +235,7 @@ func TestIsRollbackRef(t *testing.T) {
 			Stages:         []string{"main", "canary", "production"},
 			Ref:            "refs/heads/rollback-production",
 			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
 			ExpectedStages: []string{"production", "canary"},
 			ExpectedOk:     true,
 		},
@@ -237,6 +244,7 @@ func TestIsRollbackRef(t *testing.T) {
 			Stages:         []string{"main", "staging", "production"},
 			Ref:            "refs/heads/rollback-production",
 			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary"},
 			ExpectedStages: []string{"production"},
 			ExpectedOk:     true,
 		},
@@ -248,12 +256,39 @@ func TestIsRollbackRef(t *testing.T) {
 			ExpectedStages: []string{"production"},
 			ExpectedOk:     true,
 		},
+		{
+			Name:           "cascade_ignores_last_stage",
+			Stages:         []string{"main", "staging", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"production"},
+			ExpectedStages: []string{"production"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "cascade_multiple_stages",
+			Stages:         []string{"main", "staging", "canary", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"canary", "staging"},
+			ExpectedStages: []string{"production", "canary", "staging"},
+			ExpectedOk:     true,
+		},
+		{
+			Name:           "cascade_unknown_stage_ignored",
+			Stages:         []string{"main", "staging", "production"},
+			Ref:            "refs/heads/rollback-production",
+			Prefix:         "rollback-",
+			CascadeStages:  []string{"nonexistent"},
+			ExpectedStages: []string{"production"},
+			ExpectedOk:     true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			promoter := promotion.NewStagePromoter("test", tc.Stages)
-			stages, ok := promoter.IsRollbackRef(tc.Ref, tc.Prefix)
+			stages, ok := promoter.IsRollbackRef(tc.Ref, tc.Prefix, tc.CascadeStages)
 			assert.Equal(t, tc.ExpectedStages, stages)
 			assert.Equal(t, tc.ExpectedOk, ok)
 		})

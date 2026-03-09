@@ -125,7 +125,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (*promotion.Bu
 		logger.Error("failed to pre-process event", slog.Any("error", err))
 		return bus, err
 	}
-	if bus.EventStatus == promotion.Skipped {
+	if bus.EventStatus == promotion.Skipped || bus.EventStatus == promotion.Rollback {
 		logger.Info("skipping event processing")
 		return bus, nil
 	}
@@ -138,7 +138,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (*promotion.Bu
 		logger.Error("failed to post-process event", slog.Any("error", err))
 		return bus, err
 	}
-	if bus.EventStatus == promotion.Skipped {
+	if bus.EventStatus == promotion.Skipped || bus.EventStatus == promotion.Rollback {
 		logger.Info("skipping event processing")
 		return bus, nil
 	}
@@ -149,7 +149,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (*promotion.Bu
 	if err != nil {
 		logger.Error("failed to process event", slog.Any("error", err))
 	}
-	if bus.EventStatus == promotion.Skipped {
+	if bus.EventStatus == promotion.Skipped || bus.EventStatus == promotion.Rollback {
 		logger.Info("skipping event processing")
 		return bus, nil
 	}

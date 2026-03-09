@@ -42,6 +42,8 @@ const (
 	Pending EventStatus = "pending"
 	// Skipped represents a skipped promotion event.
 	Skipped EventStatus = "skipped"
+	// Rollback represents a completed rollback event.
+	Rollback EventStatus = "rollback"
 )
 
 // LogValue returns a slog.Value by delegating to the Context's LogValue method, encapsulating structured log attributes.
