@@ -108,6 +108,33 @@ Commits that are part of a promotion are marked with a status check. The format 
 </details>
 
 
+### Rollback
+
+The application supports rolling back the last promotion stage (e.g. `production`) to a previous commit by pushing to a dedicated rollback branch. When enabled, pushing to `rollback-<lastStage>` (e.g. `rollback-production`) triggers the following:
+
+1. The rollback branch commit is validated against the target stage — it must point to an older commit in the linear history (i.e. it must be _behind_ the current target).
+2. The target stage branch is force-updated to the rollback branch commit.
+3. If the penultimate stage is `canary`, it is also force-updated to the same commit, preventing the rolled-back code from being re-promoted automatically.
+
+| Promotion path                        | `rollback-production` affects |
+|---------------------------------------|-------------------------------|
+| main → staging → canary → production  | production + canary           |
+| main → canary → production            | production + canary           |
+| main → staging → production           | production only               |
+| main → production                     | production only               |
+
+The rollback feature is disabled by default. Enable it via configuration:
+
+```yaml
+promotion:
+  rollback:
+    enabled: true
+    prefix: "rollback-"   # default
+```
+
+> [!IMPORTANT]
+> The rollback branch must never be _ahead_ of the target stage in git history. The application actively validates this constraint and rejects invalid rollback attempts.
+
 ### Configuration
 
 The application can be configured using environment variables, a YAML configuration file and/or command-line arguments.
@@ -138,6 +165,9 @@ promotion:
   push:
     createTargetRef: <bool>                    # (defaults to true)
     createPullRequestInDraftModeKey: <string>  # (defaults to "gitops-promotion-draft-pr")
+  rollback:
+    enabled: <bool>           # (defaults to false)
+    prefix: <string>          # (defaults to "rollback-")
   feedback:
     commitStatus:
       enabled: <bool>         # (defaults to true)
