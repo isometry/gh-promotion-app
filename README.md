@@ -113,15 +113,15 @@ Commits that are part of a promotion are marked with a status check. The format 
 The application supports rolling back the last promotion stage (e.g. `production`) to a previous commit by pushing to a dedicated rollback branch. When enabled, pushing to `rollback-<lastStage>` (e.g. `rollback-production`) triggers the following:
 
 1. The rollback branch commit is validated against the target stage — it must point to an older commit in the linear history (i.e. it must be _behind_ the current target).
-2. The target stage branch is force-updated to the rollback branch commit.
-3. If the penultimate stage is `canary`, it is also force-updated to the same commit, preventing the rolled-back code from being re-promoted automatically.
+2. The target stage branch is force-updated to the rollback branch commit (with automatic retry on transient GitHub API failures).
+3. Any stages listed in `cascadeStages` that belong to the promotion path are also force-updated to the same commit, preventing the rolled-back code from being re-promoted automatically.
 
-| Promotion path                        | `rollback-production` affects |
-|---------------------------------------|-------------------------------|
-| main → staging → canary → production  | production + canary           |
-| main → canary → production            | production + canary           |
-| main → staging → production           | production only               |
-| main → production                     | production only               |
+| Promotion path                        | `cascadeStages: ["canary"]` | `rollback-production` affects |
+|---------------------------------------|-----------------------------|-------------------------------|
+| main → staging → canary → production  | yes                         | production + canary           |
+| main → canary → production            | yes                         | production + canary           |
+| main → staging → production           | yes (canary not in path)    | production only               |
+| main → production                     | yes (canary not in path)    | production only               |
 
 The rollback feature is disabled by default. Enable it via configuration:
 
@@ -129,7 +129,8 @@ The rollback feature is disabled by default. Enable it via configuration:
 promotion:
   rollback:
     enabled: true
-    prefix: "rollback-"   # default
+    prefix: "rollback-"          # default
+    cascadeStages: ["canary"]    # additional stages to roll back alongside the last stage
 ```
 
 > [!IMPORTANT]
@@ -168,6 +169,7 @@ promotion:
   rollback:
     enabled: <bool>           # (defaults to false)
     prefix: <string>          # (defaults to "rollback-")
+    cascadeStages: <[]string> # additional stages to roll back alongside the last stage (defaults to [])
   feedback:
     commitStatus:
       enabled: <bool>         # (defaults to true)
