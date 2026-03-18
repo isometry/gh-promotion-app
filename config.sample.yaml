@@ -25,10 +25,6 @@ promotion:
     #   - check_run
   push:
    createTargetRef: <bool>  # (defaults to true)
-  rollback:
-   enabled: <bool>           # (defaults to false)
-   prefix: <string>          # (defaults to "rollback-")
-   cascadeStages: <[]string> # additional stages to roll back alongside the last stage (defaults to [])
   feedback:
    commitStatus:
     enabled: <bool>         # (defaults to false)

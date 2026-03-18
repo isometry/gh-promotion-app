@@ -78,7 +78,7 @@ func NewPromotionHandler(options ...Option) (*Handler, error) {
 		processor.NewDynamicPromotionPreProcessor(_inst.githubController),
 	}
 	_inst.processors = map[event.Type][]processor.Processor{
-		event.Push:              {processor.NewPushEventProcessor(_inst.githubController), processor.NewRollbackEventProcessor(_inst.githubController)},
+		event.Push:              {processor.NewPushEventProcessor(_inst.githubController)},
 		event.PullRequest:       {processor.NewPullRequestEventProcessor(_inst.githubController)},
 		event.PullRequestReview: {processor.NewPullRequestReviewEventProcessor(_inst.githubController)},
 		event.CheckSuite:        {processor.NewCheckSuiteEventProcessor(_inst.githubController)},
@@ -125,7 +125,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (*promotion.Bu
 		logger.Error("failed to pre-process event", slog.Any("error", err))
 		return bus, err
 	}
-	if bus.EventStatus == promotion.Skipped || bus.EventStatus == promotion.Rollback {
+	if bus.EventStatus == promotion.Skipped {
 		logger.Info("skipping event processing")
 		return bus, nil
 	}
@@ -138,7 +138,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (*promotion.Bu
 		logger.Error("failed to post-process event", slog.Any("error", err))
 		return bus, err
 	}
-	if bus.EventStatus == promotion.Skipped || bus.EventStatus == promotion.Rollback {
+	if bus.EventStatus == promotion.Skipped {
 		logger.Info("skipping event processing")
 		return bus, nil
 	}
@@ -149,7 +149,7 @@ func (h *Handler) Process(body []byte, headers map[string]string) (*promotion.Bu
 	if err != nil {
 		logger.Error("failed to process event", slog.Any("error", err))
 	}
-	if bus.EventStatus == promotion.Skipped || bus.EventStatus == promotion.Rollback {
+	if bus.EventStatus == promotion.Skipped {
 		logger.Info("skipping event processing")
 		return bus, nil
 	}
