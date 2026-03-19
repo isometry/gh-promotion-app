@@ -11,7 +11,7 @@ require (
 	github.com/aws/smithy-go v1.24.2
 	github.com/bradleyfalzon/ghinstallation/v2 v2.18.0
 	github.com/creasty/defaults v1.8.0
-	github.com/gofri/go-github-ratelimit v1.1.1
+	github.com/gofri/go-github-ratelimit/v2 v2.0.2
 	github.com/google/go-github/v84 v84.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed

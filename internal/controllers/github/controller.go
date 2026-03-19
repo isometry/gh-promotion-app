@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/gofri/go-github-ratelimit/github_ratelimit"
+	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
 	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/controllers/aws"
@@ -147,11 +147,8 @@ func (g *Controller) GetGitHubClients(body []byte) (*Client, error) {
 			&oauth2.Token{AccessToken: g.Token},
 		)
 		httpClient := oauth2.NewClient(g.ctx, src)
-		v3rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(roundTripper)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create rate limiter Controller client")
-		}
-		v4rateLimiter, _ := github_ratelimit.NewRateLimitWaiterClient(httpClient.Transport)
+		v3rateLimiter := github_ratelimit.NewClient(roundTripper)
+		v4rateLimiter := github_ratelimit.NewClient(httpClient.Transport)
 
 		clientV3 = github.NewClient(v3rateLimiter).WithAuthToken(g.Token)
 		clientV4 = githubv4.NewClient(v4rateLimiter)
@@ -163,10 +160,8 @@ func (g *Controller) GetGitHubClients(body []byte) (*Client, error) {
 			return nil, errors.Wrap(err, "failed to create installation transport")
 		}
 
-		rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(transport)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create rate limiter Controller client")
-		}
+		rateLimiter := github_ratelimit.NewClient(transport)
+
 		clientV3 = github.NewClient(rateLimiter)
 		clientV4 = githubv4.NewClient(rateLimiter)
 	default:
