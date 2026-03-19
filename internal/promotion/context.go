@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/go-github/v68/github"
+	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/models"

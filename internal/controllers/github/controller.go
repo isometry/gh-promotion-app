@@ -17,7 +17,7 @@ import (
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/gofri/go-github-ratelimit/github_ratelimit"
-	"github.com/google/go-github/v68/github"
+	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/controllers/aws"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/templates"
@@ -200,13 +200,10 @@ func (g *Controller) CreatePromotionTargetRef(pCtx *promotion.Context) (*github.
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch root commit")
 	}
-	ref := &github.Reference{
-		Ref: helpers.NormaliseFullRefPtr(pCtx.BaseRef),
-		Object: &github.GitObject{
-			SHA: rootCommit,
-		},
-	}
-	ref, _, err = pCtx.ClientV3.Git.CreateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, ref)
+	ref, _, err := pCtx.ClientV3.Git.CreateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, github.CreateRef{
+		Ref: helpers.NormaliseFullRef(pCtx.BaseRef),
+		SHA: *rootCommit,
+	})
 	return ref, errors.Wrap(err, "failed to create ref")
 }
 
@@ -329,13 +326,12 @@ func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest,
 func (g *Controller) FastForwardRefToSha(pCtx *promotion.Context) error {
 	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
 	ctxLogger.Debug("attempting fast forward...", slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
-	reference := github.Reference{
-		Ref: helpers.NormaliseFullRefPtr(*pCtx.BaseRef),
-		Object: &github.GitObject{
-			SHA: pCtx.HeadSHA,
-		},
-	}
-	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, false)
+	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository,
+		helpers.NormaliseFullRef(*pCtx.BaseRef),
+		github.UpdateRef{
+			SHA:   *pCtx.HeadSHA,
+			Force: github.Ptr(false),
+		})
 	if err != nil {
 		ctxLogger.Error("failed fast forward", slog.Any("error", err))
 		return err
@@ -407,7 +403,7 @@ func (g *Controller) SendPromotionFeedbackCommitStatus(bus *promotion.Bus, commi
 		return promotion.NewInternalError("invalid feedback request. callee: processPromotionFeedback")
 	}
 
-	status := &github.RepoStatus{
+	status := github.RepoStatus{
 		Description: msg,
 		Context:     contextValue,
 		State:       new(string(commitStatus)),

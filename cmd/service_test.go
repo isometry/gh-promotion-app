@@ -14,7 +14,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/google/go-github/v68/github"
+	"github.com/google/go-github/v84/github"
 	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
 	"github.com/isometry/gh-promotion-app/internal/handler"
 	"github.com/isometry/gh-promotion-app/internal/runtime"

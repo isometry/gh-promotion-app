@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/google/go-github/v68/github"
+	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/config"
 	internalGitHub "github.com/isometry/gh-promotion-app/internal/controllers/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"

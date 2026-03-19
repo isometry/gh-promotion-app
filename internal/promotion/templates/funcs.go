@@ -4,7 +4,7 @@ package templates
 import (
 	"text/template"
 
-	"github.com/google/go-github/v68/github"
+	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 )
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v68/github"
+	"github.com/google/go-github/v84/github"
 )
 
 // WebhookSecret represents a secret used to validate webhook signatures for verifying request authenticity.
