@@ -15,7 +15,7 @@ import (
 	"text/template"
 	"time"
 
-"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
+	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
 	"github.com/google/go-github/v84/github"
 	"github.com/pkg/errors"
 	"github.com/shurcooL/githubv4"
@@ -29,7 +29,7 @@ import (
 	"github.com/isometry/gh-promotion-app/internal/validation"
 
 	"github.com/isometry/ghait/v84"
-	_ "github.com/isometry/ghait/v84/provider/aws"
+	_ "github.com/isometry/ghait/v84/provider/aws" // enable AWS KMS provider
 
 	_ "embed"
 )
@@ -85,9 +85,9 @@ type Controller struct {
 
 // Credentials is a helper struct to hold the Controller credentials.
 type Credentials struct {
-	AppID         int64                     `json:"app_id,omitempty"`
+	AppID int64 `json:"app_id,omitempty"`
 	// Deprecated: Use Provider and Key fields instead. Retained for backward compatibility with existing SSM secrets.
-	PrivateKey string `json:"private_key,omitempty"` //nolint:gosec
+	PrivateKey    string                    `json:"private_key,omitempty"` //nolint:gosec
 	Provider      string                    `json:"provider,omitempty"`
 	Key           string                    `json:"key,omitempty"`
 	WebhookSecret *validation.WebhookSecret `json:"webhook_secret"`
@@ -330,7 +330,7 @@ func (g *Controller) FastForwardRefToSha(pCtx *promotion.Context) error {
 		helpers.NormaliseFullRef(*pCtx.BaseRef),
 		github.UpdateRef{
 			SHA:   *pCtx.HeadSHA,
-			Force: github.Ptr(false),
+			Force: new(false),
 		})
 	if err != nil {
 		ctxLogger.Error("failed fast forward", slog.Any("error", err))
