@@ -115,7 +115,11 @@ func (g *Controller) RetrieveCredentials() error {
 		if err = json.Unmarshal([]byte(*secret), &g.Credentials); err != nil {
 			return errors.Wrap(err, "failed to unmarshal credentials")
 		}
-		cfg := ghait.NewConfig(g.AppID, 0, cmp.Or(g.Provider, "file"), cmp.Or(g.Key, g.PrivateKey))
+		key := cmp.Or(g.Key, g.PrivateKey)
+		if key == "" {
+			return errors.New("no key or private_key provided in credentials")
+		}
+		cfg := ghait.NewConfig(g.AppID, 0, cmp.Or(g.Provider, "file"), key)
 		ga, err := ghait.NewGHAIT(g.ctx, cfg)
 		if err != nil {
 			return errors.Wrapf(err, "failed to initialize ghait (%s)", cmp.Or(g.Provider, "file"))
@@ -158,12 +162,21 @@ func (g *Controller) GetGitHubClients(body []byte) (*Client, error) {
 		}
 	case "ssm":
 		g.logger.Debug("creating clients via ghait...", slog.String("provider", cmp.Or(g.Provider, "file")))
-		token, err := g.ghaitInstance.NewInstallationToken(g.ctx, *installationID, nil)
+		if g.ghaitInstance == nil {
+			return nil, errors.New("ghait not initialized: call RetrieveCredentials first")
+		}
+		src := &ghaitTokenSource{
+			ctx:            g.ctx,
+			ghait:          g.ghaitInstance,
+			installationID: *installationID,
+			logger:         g.logger,
+		}
+		initialToken, err := src.Token()
 		if err != nil {
 			return nil, errors.Wrap(err, "ghait installation token")
 		}
 		transport = &oauth2.Transport{
-			Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token.GetToken()}),
+			Source: oauth2.ReuseTokenSourceWithExpiry(initialToken, src, 5*time.Minute),
 			Base:   &loggingRoundTripper{logger: g.logger},
 		}
 	default:
@@ -325,7 +338,7 @@ func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest,
 // FastForwardRefToSha pushes a commit to a ref, used to merge an open pull request via fast-forward.
 func (g *Controller) FastForwardRefToSha(pCtx *promotion.Context) error {
 	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
-	ctxLogger.Debug("attempting fast forward...", slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA))
+	ctxLogger.Debug("attempting fast forward...")
 	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository,
 		helpers.NormaliseFullRef(*pCtx.BaseRef),
 		github.UpdateRef{
@@ -655,6 +668,28 @@ func (g *Controller) RequestTitle(pCtx promotion.Context) *string {
 	)
 
 	return &title
+}
+
+// ghaitTokenSource implements oauth2.TokenSource by obtaining GitHub App
+// installation tokens via ghait. Used with oauth2.ReuseTokenSourceWithExpiry
+// to transparently refresh tokens before they expire.
+type ghaitTokenSource struct {
+	ctx            context.Context
+	ghait          ghait.GHAIT
+	installationID int64
+	logger         *slog.Logger
+}
+
+func (s *ghaitTokenSource) Token() (*oauth2.Token, error) {
+	s.logger.Debug("refreshing installation token...", slog.Int64("installationID", s.installationID))
+	t, err := s.ghait.NewInstallationToken(s.ctx, s.installationID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ghait token refresh: %w", err)
+	}
+	return &oauth2.Token{
+		AccessToken: t.GetToken(),
+		Expiry:      t.GetExpiresAt().Time,
+	}, nil
 }
 
 type loggingRoundTripper struct {
