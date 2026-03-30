@@ -186,22 +186,35 @@ Personal access token w/ permissions compatible with the selected configuration.
 > [!NOTE]
 > PATs are not allowed to create new check-run(s). You will need to use a [GitHub app](#github-app) installation instead.
 
-#### GitHub App
+#### GitHub App (via [ghait](https://github.com/isometry/ghait))
 
-At this time, the application requires that the GitHub app installation secrets are stored in AWS SSM.
+The application requires that the GitHub App credentials are stored in AWS SSM. Authentication is handled by [ghait](https://github.com/isometry/ghait), which supports multiple signing providers.
 
-The supported format is as follows:
+The SSM secret format is:
 
 ```json
 {
     "app_id": "<int64>",
-    "private_key": "<string>",
+    "provider": "<string>",
+    "key": "<string>",
     "webhook_secret": "<string>"
 }
 ```
 
-The above credentials are then used to authenticate to GitHub on behalf of the app.
-Fetched secrets are cached in-memory per-GitHub app installation ID as to avoid unnecessary requests.
+Supported providers: `file`, `aws`.
+
+| Provider | `key` format | IAM requirement |
+|----------|-------------|-----------------|
+| `file` | Path to PEM file | Read access to the file |
+| `aws` | KMS key ID or alias (e.g. `alias/github-app`) | `kms:Sign` permission on the key |
+
+> [!NOTE]
+> When using the `aws` provider, the GitHub App private key never leaves KMS. The application signs JWTs via KMS and exchanges them for installation tokens.
+
+Fetched secrets are cached in-memory per-GitHub App installation ID to avoid unnecessary requests.
+
+> [!WARNING]
+> The `private_key` field is **deprecated**. If set without a `provider`, the application defaults to `provider: "file"` and uses `private_key` as the `key` value. Migrate to explicit `provider` and `key` fields instead.
 
 AWS interactions are handled by the [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2) SDK.
 

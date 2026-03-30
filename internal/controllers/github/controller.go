@@ -15,18 +15,21 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
+"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
 	"github.com/google/go-github/v84/github"
+	"github.com/pkg/errors"
+	"github.com/shurcooL/githubv4"
+	"golang.org/x/oauth2"
+
 	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/controllers/aws"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/templates"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
-	"github.com/pkg/errors"
-	"github.com/shurcooL/githubv4"
-	"golang.org/x/oauth2"
+
+	"github.com/isometry/ghait/v84"
+	_ "github.com/isometry/ghait/v84/provider/aws"
 
 	_ "embed"
 )
@@ -77,12 +80,16 @@ type Controller struct {
 	ctx           context.Context
 	logger        *slog.Logger
 	awsController *aws.Controller
+	ghaitInstance ghait.GHAIT // initialized by RetrieveCredentials in ssm mode
 }
 
 // Credentials is a helper struct to hold the Controller credentials.
 type Credentials struct {
 	AppID         int64                     `json:"app_id,omitempty"`
-	PrivateKey    string                    `json:"private_key,omitempty"` //nolint:gosec // Private key is required for app authentication, not logged or exposed.
+	// Deprecated: Use Provider and Key fields instead. Retained for backward compatibility with existing SSM secrets.
+	PrivateKey string `json:"private_key,omitempty"` //nolint:gosec
+	Provider      string                    `json:"provider,omitempty"`
+	Key           string                    `json:"key,omitempty"`
 	WebhookSecret *validation.WebhookSecret `json:"webhook_secret"`
 	Token         string                    `json:"token,omitempty"`
 }
@@ -96,7 +103,7 @@ func (g *Controller) RetrieveCredentials() error {
 		}
 		return nil
 	case "ssm":
-		if g.WebhookSecret != nil && g.AppID != 0 && g.PrivateKey != "" {
+		if g.WebhookSecret != nil && g.AppID != 0 && g.ghaitInstance != nil {
 			g.logger.Debug("using cached Controller App credentials...")
 			return nil
 		}
@@ -108,6 +115,12 @@ func (g *Controller) RetrieveCredentials() error {
 		if err = json.Unmarshal([]byte(*secret), &g.Credentials); err != nil {
 			return errors.Wrap(err, "failed to unmarshal credentials")
 		}
+		cfg := ghait.NewConfig(g.AppID, 0, cmp.Or(g.Provider, "file"), cmp.Or(g.Key, g.PrivateKey))
+		ga, err := ghait.NewGHAIT(g.ctx, cfg)
+		if err != nil {
+			return errors.Wrapf(err, "failed to initialize ghait (%s)", cmp.Or(g.Provider, "file"))
+		}
+		g.ghaitInstance = ga
 	case "vault":
 		panic("vault auth mode not implemented")
 	default:
@@ -135,38 +148,30 @@ func (g *Controller) GetGitHubClients(body []byte) (*Client, error) {
 
 	// Cache miss
 	g.logger.Debug("cache miss. spawning clients...", slog.Int64("installationId", *installationID))
-	var (
-		clientV3 *github.Client
-		clientV4 *githubv4.Client
-	)
+	var transport http.RoundTripper
 	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
 	case "token":
 		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
-		roundTripper := &loggingRoundTripper{logger: g.logger}
-		src := oauth2.StaticTokenSource(
-			&oauth2.Token{AccessToken: g.Token},
-		)
-		httpClient := oauth2.NewClient(g.ctx, src)
-		v3rateLimiter := github_ratelimit.NewClient(roundTripper)
-		v4rateLimiter := github_ratelimit.NewClient(httpClient.Transport)
-
-		clientV3 = github.NewClient(v3rateLimiter).WithAuthToken(g.Token)
-		clientV4 = githubv4.NewClient(v4rateLimiter)
-	case "ssm":
-		g.logger.Debug("Spawning credentials using Controller App credentials from SSM...")
-		roundTripper := &loggingRoundTripper{logger: g.logger}
-		transport, err := ghinstallation.New(roundTripper, g.AppID, *installationID, []byte(g.PrivateKey))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create installation transport")
+		transport = &oauth2.Transport{
+			Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: g.Token}),
+			Base:   &loggingRoundTripper{logger: g.logger},
 		}
-
-		rateLimiter := github_ratelimit.NewClient(transport)
-
-		clientV3 = github.NewClient(rateLimiter)
-		clientV4 = githubv4.NewClient(rateLimiter)
+	case "ssm":
+		g.logger.Debug("creating clients via ghait...", slog.String("provider", cmp.Or(g.Provider, "file")))
+		token, err := g.ghaitInstance.NewInstallationToken(g.ctx, *installationID, nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "ghait installation token")
+		}
+		transport = &oauth2.Transport{
+			Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token.GetToken()}),
+			Base:   &loggingRoundTripper{logger: g.logger},
+		}
 	default:
 		return nil, errors.New("no valid credentials found")
 	}
+	rateLimiter := github_ratelimit.NewClient(transport)
+	clientV3 := github.NewClient(rateLimiter)
+	clientV4 := githubv4.NewClient(rateLimiter)
 	// Persist cache entry
 	_clientCache[*installationID] = &Client{
 		installationID: *installationID,
