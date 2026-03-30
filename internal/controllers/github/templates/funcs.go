@@ -6,7 +6,7 @@ import (
 	"strings"
 	"text/template"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // StandardFuncs is a map of standard functions that can be used in GitHub-related request templates.

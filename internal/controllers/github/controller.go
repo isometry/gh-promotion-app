@@ -15,18 +15,21 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/gofri/go-github-ratelimit/github_ratelimit"
-	"github.com/google/go-github/v68/github"
+	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
+	"github.com/google/go-github/v84/github"
+	"github.com/pkg/errors"
+	"github.com/shurcooL/githubv4"
+	"golang.org/x/oauth2"
+
 	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/controllers/aws"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/templates"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
-	"github.com/pkg/errors"
-	"github.com/shurcooL/githubv4"
-	"golang.org/x/oauth2"
+
+	"github.com/isometry/ghait/v84"
+	_ "github.com/isometry/ghait/v84/provider/aws" // enable AWS KMS provider
 
 	_ "embed"
 )
@@ -77,12 +80,16 @@ type Controller struct {
 	ctx           context.Context
 	logger        *slog.Logger
 	awsController *aws.Controller
+	ghaitInstance ghait.GHAIT // initialized by RetrieveCredentials in ssm mode
 }
 
 // Credentials is a helper struct to hold the Controller credentials.
 type Credentials struct {
-	AppID         int64                     `json:"app_id,omitempty"`
-	PrivateKey    string                    `json:"private_key,omitempty"` //nolint:gosec // Private key is required for app authentication, not logged or exposed.
+	AppID int64 `json:"app_id,omitempty"`
+	// Deprecated: Use Provider and Key fields instead. Retained for backward compatibility with existing SSM secrets.
+	PrivateKey    string                    `json:"private_key,omitempty"` //nolint:gosec
+	Provider      string                    `json:"provider,omitempty"`
+	Key           string                    `json:"key,omitempty"`
 	WebhookSecret *validation.WebhookSecret `json:"webhook_secret"`
 	Token         string                    `json:"token,omitempty"`
 }
@@ -96,7 +103,7 @@ func (g *Controller) RetrieveCredentials() error {
 		}
 		return nil
 	case "ssm":
-		if g.WebhookSecret != nil && g.AppID != 0 && g.PrivateKey != "" {
+		if g.WebhookSecret != nil && g.AppID != 0 && g.ghaitInstance != nil {
 			g.logger.Debug("using cached Controller App credentials...")
 			return nil
 		}
@@ -108,6 +115,16 @@ func (g *Controller) RetrieveCredentials() error {
 		if err = json.Unmarshal([]byte(*secret), &g.Credentials); err != nil {
 			return errors.Wrap(err, "failed to unmarshal credentials")
 		}
+		key := cmp.Or(g.Key, g.PrivateKey)
+		if key == "" {
+			return errors.New("no key or private_key provided in credentials")
+		}
+		cfg := ghait.NewConfig(g.AppID, 0, cmp.Or(g.Provider, "file"), key)
+		ga, err := ghait.NewGHAIT(g.ctx, cfg)
+		if err != nil {
+			return errors.Wrapf(err, "failed to initialize ghait (%s)", cmp.Or(g.Provider, "file"))
+		}
+		g.ghaitInstance = ga
 	case "vault":
 		panic("vault auth mode not implemented")
 	default:
@@ -135,43 +152,39 @@ func (g *Controller) GetGitHubClients(body []byte) (*Client, error) {
 
 	// Cache miss
 	g.logger.Debug("cache miss. spawning clients...", slog.Int64("installationId", *installationID))
-	var (
-		clientV3 *github.Client
-		clientV4 *githubv4.Client
-	)
+	var transport http.RoundTripper
 	switch strings.TrimSpace(strings.ToLower(g.authMode)) {
 	case "token":
 		g.logger.Debug("[GITHUB_TOKEN] detected. Spawning clients using PAT...")
-		roundTripper := &loggingRoundTripper{logger: g.logger}
-		src := oauth2.StaticTokenSource(
-			&oauth2.Token{AccessToken: g.Token},
-		)
-		httpClient := oauth2.NewClient(g.ctx, src)
-		v3rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(roundTripper)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create rate limiter Controller client")
+		transport = &oauth2.Transport{
+			Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: g.Token}),
+			Base:   &loggingRoundTripper{logger: g.logger},
 		}
-		v4rateLimiter, _ := github_ratelimit.NewRateLimitWaiterClient(httpClient.Transport)
-
-		clientV3 = github.NewClient(v3rateLimiter).WithAuthToken(g.Token)
-		clientV4 = githubv4.NewClient(v4rateLimiter)
 	case "ssm":
-		g.logger.Debug("Spawning credentials using Controller App credentials from SSM...")
-		roundTripper := &loggingRoundTripper{logger: g.logger}
-		transport, err := ghinstallation.New(roundTripper, g.AppID, *installationID, []byte(g.PrivateKey))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create installation transport")
+		g.logger.Debug("creating clients via ghait...", slog.String("provider", cmp.Or(g.Provider, "file")))
+		if g.ghaitInstance == nil {
+			return nil, errors.New("ghait not initialized: call RetrieveCredentials first")
 		}
-
-		rateLimiter, err := github_ratelimit.NewRateLimitWaiterClient(transport)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create rate limiter Controller client")
+		src := &ghaitTokenSource{
+			ctx:            g.ctx,
+			ghait:          g.ghaitInstance,
+			installationID: *installationID,
+			logger:         g.logger,
 		}
-		clientV3 = github.NewClient(rateLimiter)
-		clientV4 = githubv4.NewClient(rateLimiter)
+		initialToken, err := src.Token()
+		if err != nil {
+			return nil, errors.Wrap(err, "ghait installation token")
+		}
+		transport = &oauth2.Transport{
+			Source: oauth2.ReuseTokenSourceWithExpiry(initialToken, src, 5*time.Minute),
+			Base:   &loggingRoundTripper{logger: g.logger},
+		}
 	default:
 		return nil, errors.New("no valid credentials found")
 	}
+	rateLimiter := github_ratelimit.NewClient(transport)
+	clientV3 := github.NewClient(rateLimiter)
+	clientV4 := githubv4.NewClient(rateLimiter)
 	// Persist cache entry
 	_clientCache[*installationID] = &Client{
 		installationID: *installationID,
@@ -200,13 +213,10 @@ func (g *Controller) CreatePromotionTargetRef(pCtx *promotion.Context) (*github.
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch root commit")
 	}
-	ref := &github.Reference{
-		Ref: helpers.NormaliseFullRefPtr(pCtx.BaseRef),
-		Object: &github.GitObject{
-			SHA: rootCommit,
-		},
-	}
-	ref, _, err = pCtx.ClientV3.Git.CreateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, ref)
+	ref, _, err := pCtx.ClientV3.Git.CreateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, github.CreateRef{
+		Ref: helpers.NormaliseFullRef(pCtx.BaseRef),
+		SHA: *rootCommit,
+	})
 	return ref, errors.Wrap(err, "failed to create ref")
 }
 
@@ -327,46 +337,20 @@ func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest,
 
 // FastForwardRefToSha pushes a commit to a ref, used to merge an open pull request via fast-forward.
 func (g *Controller) FastForwardRefToSha(pCtx *promotion.Context) error {
-	return g.updateRefToSha(pCtx, false)
-}
-
-// CompareCommits compares two commits and returns the comparison result.
-func (g *Controller) CompareCommits(pCtx *promotion.Context, base, head string) (*github.CommitsComparison, error) {
-	g.logger.Debug("comparing commits...", slog.String("base", base), slog.String("head", head), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
-	comparison, _, err := pCtx.ClientV3.Repositories.CompareCommits(g.ctx, *pCtx.Owner, *pCtx.Repository, base, head, nil)
-	if err != nil {
-		g.logger.Error("failed to compare commits", slog.Any("error", err))
-		return nil, err
-	}
-
-	g.logger.Debug("compare result", slog.String("status", comparison.GetStatus()), slog.Int("ahead_by", comparison.GetAheadBy()), slog.Int("behind_by", comparison.GetBehindBy()))
-	return comparison, nil
-}
-
-// ForceUpdateRefToSha forces a ref update to a specific SHA, used for rollback operations.
-func (g *Controller) ForceUpdateRefToSha(pCtx *promotion.Context) error {
-	return g.updateRefToSha(pCtx, true)
-}
-
-func (g *Controller) updateRefToSha(pCtx *promotion.Context, force bool) error {
-	action := "fast forward"
-	if force {
-		action = "force update"
-	}
 	ctxLogger := g.logger.With(slog.String("headRef", *pCtx.HeadRef), slog.String("headSHA", *pCtx.HeadSHA), slog.String("owner", *pCtx.Owner), slog.String("repository", *pCtx.Repository))
-	ctxLogger.Debug(fmt.Sprintf("attempting %s...", action), slog.String("baseRef", *pCtx.BaseRef), slog.String("headSHA", *pCtx.HeadSHA))
-	reference := github.Reference{
-		Ref: helpers.NormaliseFullRefPtr(*pCtx.BaseRef),
-		Object: &github.GitObject{
-			SHA: pCtx.HeadSHA,
-		},
-	}
-	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository, &reference, force)
+	ctxLogger.Debug("attempting fast forward...")
+	_, _, err := pCtx.ClientV3.Git.UpdateRef(g.ctx, *pCtx.Owner, *pCtx.Repository,
+		helpers.NormaliseFullRef(*pCtx.BaseRef),
+		github.UpdateRef{
+			SHA:   *pCtx.HeadSHA,
+			Force: new(false),
+		})
 	if err != nil {
-		ctxLogger.Error(fmt.Sprintf("failed %s", action), slog.Any("error", err))
+		ctxLogger.Error("failed fast forward", slog.Any("error", err))
 		return err
 	}
-	ctxLogger.Debug(fmt.Sprintf("successful %s", action))
+
+	ctxLogger.Debug("successful fast forward")
 	return nil
 }
 
@@ -432,7 +416,7 @@ func (g *Controller) SendPromotionFeedbackCommitStatus(bus *promotion.Bus, commi
 		return promotion.NewInternalError("invalid feedback request. callee: processPromotionFeedback")
 	}
 
-	status := &github.RepoStatus{
+	status := github.RepoStatus{
 		Description: msg,
 		Context:     contextValue,
 		State:       new(string(commitStatus)),
@@ -559,8 +543,8 @@ func (g *Controller) processPromotionFeedback(bus *promotion.Bus, logger *slog.L
 		return nil, nil
 	}
 
-	if pCtx.EventType == promotion.Skipped || pCtx.EventType == promotion.Rollback {
-		logger.Debug("ignoring promotion feedback request due to skipped or rollback event")
+	if pCtx.EventType == promotion.Skipped {
+		logger.Debug("ignoring promotion feedback request due to skipped event")
 		return nil, nil
 	}
 
@@ -684,6 +668,28 @@ func (g *Controller) RequestTitle(pCtx promotion.Context) *string {
 	)
 
 	return &title
+}
+
+// ghaitTokenSource implements oauth2.TokenSource by obtaining GitHub App
+// installation tokens via ghait. Used with oauth2.ReuseTokenSourceWithExpiry
+// to transparently refresh tokens before they expire.
+type ghaitTokenSource struct {
+	ctx            context.Context
+	ghait          ghait.GHAIT
+	installationID int64
+	logger         *slog.Logger
+}
+
+func (s *ghaitTokenSource) Token() (*oauth2.Token, error) {
+	s.logger.Debug("refreshing installation token...", slog.Int64("installationID", s.installationID))
+	t, err := s.ghait.NewInstallationToken(s.ctx, s.installationID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ghait token refresh: %w", err)
+	}
+	return &oauth2.Token{
+		AccessToken: t.GetToken(),
+		Expiry:      t.GetExpiresAt().Time,
+	}, nil
 }
 
 type loggingRoundTripper struct {

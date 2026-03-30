@@ -108,34 +108,6 @@ Commits that are part of a promotion are marked with a status check. The format 
 </details>
 
 
-### Rollback
-
-The application supports rolling back the last promotion stage (e.g. `production`) to a previous commit by pushing to a dedicated rollback branch. When enabled, pushing to `rollback-<lastStage>` (e.g. `rollback-production`) triggers the following:
-
-1. The rollback branch commit is validated against the target stage — it must point to an older commit in the linear history (i.e. it must be _behind_ the current target).
-2. The target stage branch is force-updated to the rollback branch commit (with automatic retry on transient GitHub API failures).
-3. Any stages listed in `cascadeStages` that belong to the promotion path are also force-updated to the same commit, preventing the rolled-back code from being re-promoted automatically.
-
-| Promotion path                        | `cascadeStages: ["canary"]` | `rollback-production` affects |
-|---------------------------------------|-----------------------------|-------------------------------|
-| main → staging → canary → production  | yes                         | production + canary           |
-| main → canary → production            | yes                         | production + canary           |
-| main → staging → production           | yes (canary not in path)    | production only               |
-| main → production                     | yes (canary not in path)    | production only               |
-
-The rollback feature is disabled by default. Enable it via configuration:
-
-```yaml
-promotion:
-  rollback:
-    enabled: true
-    prefix: "rollback-"          # default
-    cascadeStages: ["canary"]    # additional stages to roll back alongside the last stage
-```
-
-> [!IMPORTANT]
-> The rollback branch must never be _ahead_ of the target stage in git history. The application actively validates this constraint and rejects invalid rollback attempts.
-
 ### Configuration
 
 The application can be configured using environment variables, a YAML configuration file and/or command-line arguments.
@@ -166,10 +138,6 @@ promotion:
   push:
     createTargetRef: <bool>                    # (defaults to true)
     createPullRequestInDraftModeKey: <string>  # (defaults to "gitops-promotion-draft-pr")
-  rollback:
-    enabled: <bool>           # (defaults to false)
-    prefix: <string>          # (defaults to "rollback-")
-    cascadeStages: <[]string> # additional stages to roll back alongside the last stage (defaults to [])
   feedback:
     commitStatus:
       enabled: <bool>         # (defaults to true)
@@ -218,22 +186,35 @@ Personal access token w/ permissions compatible with the selected configuration.
 > [!NOTE]
 > PATs are not allowed to create new check-run(s). You will need to use a [GitHub app](#github-app) installation instead.
 
-#### GitHub App
+#### GitHub App (via [ghait](https://github.com/isometry/ghait))
 
-At this time, the application requires that the GitHub app installation secrets are stored in AWS SSM.
+The application requires that the GitHub App credentials are stored in AWS SSM. Authentication is handled by [ghait](https://github.com/isometry/ghait), which supports multiple signing providers.
 
-The supported format is as follows:
+The SSM secret format is:
 
 ```json
 {
     "app_id": "<int64>",
-    "private_key": "<string>",
+    "provider": "<string>",
+    "key": "<string>",
     "webhook_secret": "<string>"
 }
 ```
 
-The above credentials are then used to authenticate to GitHub on behalf of the app.
-Fetched secrets are cached in-memory per-GitHub app installation ID as to avoid unnecessary requests.
+Supported providers: `file`, `aws`.
+
+| Provider | `key` format | IAM requirement |
+|----------|-------------|-----------------|
+| `file` | Path to PEM file | Read access to the file |
+| `aws` | KMS key ID or alias (e.g. `alias/github-app`) | `kms:Sign` permission on the key |
+
+> [!NOTE]
+> When using the `aws` provider, the GitHub App private key never leaves KMS. The application signs JWTs via KMS and exchanges them for installation tokens.
+
+Fetched secrets are cached in-memory per-GitHub App installation ID to avoid unnecessary requests.
+
+> [!WARNING]
+> The `private_key` field is **deprecated**. If set without a `provider`, the application defaults to `provider: "file"` and uses `private_key` as the `key` value. Migrate to explicit `provider` and `key` fields instead.
 
 AWS interactions are handled by the [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2) SDK.
 

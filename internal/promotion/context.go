@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/go-github/v68/github"
+	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
 	"github.com/isometry/gh-promotion-app/internal/models"
@@ -42,8 +42,6 @@ const (
 	Pending EventStatus = "pending"
 	// Skipped represents a skipped promotion event.
 	Skipped EventStatus = "skipped"
-	// Rollback represents a completed rollback event.
-	Rollback EventStatus = "rollback"
 )
 
 // LogValue returns a slog.Value by delegating to the Context's LogValue method, encapsulating structured log attributes.
