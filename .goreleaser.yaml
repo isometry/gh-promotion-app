@@ -4,7 +4,8 @@ before:
   hooks:
     - go mod tidy
 builds:
-  - env:
+  - id: release
+    env:
       - CGO_ENABLED=0
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags:
@@ -22,6 +23,7 @@ builds:
     binary: gh-promotion-app
 kos:
   - id: release
+    build: release
     platforms:
       - linux/amd64
       - linux/arm64
@@ -36,10 +38,11 @@ kos:
     ldflags:
       - -s -w
 archives:
-  - format: zip
+  - formats:
+      - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 snapshot:
-  version_template: "{{ .Tag }}-next"
+  version_template: "{{ .Version }}-next"
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
   algorithm: sha256
