@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/models"
 	"github.com/isometry/gh-promotion-app/internal/promotion/templates"
 
 	_ "embed"
@@ -38,8 +39,8 @@ func NewStagePromoter(class string, stages []string) *Promoter {
 }
 
 // NewDynamicPromoter creates a new promoter instance with the given stages.
-func NewDynamicPromoter(logger *slog.Logger, props map[string]string, promoterKey, promoterClassKey string) *Promoter {
-	stagesBlob, found := props[promoterKey]
+func NewDynamicPromoter(logger *slog.Logger, props models.CustomProperties, promoterKey, promoterClassKey string) *Promoter {
+	stagesBlob, found := props.String(promoterKey)
 	stagesBlob = strings.TrimSpace(stagesBlob)
 	if !found {
 		logger.Warn("promoter key not found in properties. Defaulting to standard promoter...", slog.Any("key", promoterKey))
@@ -65,7 +66,7 @@ func NewDynamicPromoter(logger *slog.Logger, props map[string]string, promoterKe
 	}
 	logger.Debug("dynamic promoter stages loaded...", slog.Any("stages", stages))
 	class := defaultClass
-	if classValue, found := props[promoterClassKey]; found {
+	if classValue, found := props.String(promoterClassKey); found {
 		class = classValue
 	}
 	return NewStagePromoter(class, stages)

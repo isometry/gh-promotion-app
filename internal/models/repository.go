@@ -7,7 +7,7 @@ type RepositoryContext struct {
 	Owner    *struct {
 		Login *string `json:"login,omitempty"`
 	} `json:"owner,omitempty"`
-	CustomProperties map[string]string `json:"custom_properties,omitempty"`
+	CustomProperties CustomProperties `json:"custom_properties,omitempty"`
 }
 
 // EventRepository represents an event's repository details as part of webhook payloads or events.

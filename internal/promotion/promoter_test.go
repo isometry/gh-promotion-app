@@ -2,13 +2,30 @@
 package promotion_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/go-github/v84/github"
 	"github.com/isometry/gh-promotion-app/internal/config"
 	"github.com/isometry/gh-promotion-app/internal/helpers"
+	"github.com/isometry/gh-promotion-app/internal/models"
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	promotionPathProperty = "gitops-promotion-path"
+
+	mainStage       = "main"
+	stagingStage    = "staging"
+	canaryStage     = "canary"
+	productionStage = "production"
+
+	mainRef       = "refs/heads/main"
+	stagingRef    = "refs/heads/staging"
+	canaryRef     = "refs/heads/canary"
+	productionRef = "refs/heads/production"
 )
 
 func TestStageIndex(t *testing.T) {
@@ -18,18 +35,18 @@ func TestStageIndex(t *testing.T) {
 		Expected int
 	}{
 		{
-			Name:     "staging",
-			Input:    "refs/heads/staging",
+			Name:     stagingStage,
+			Input:    stagingRef,
 			Expected: 1,
 		},
 		{
-			Name:     "canary",
-			Input:    "refs/heads/canary",
+			Name:     canaryStage,
+			Input:    canaryRef,
 			Expected: 2,
 		},
 		{
-			Name:     "production",
-			Input:    "refs/heads/production",
+			Name:     productionStage,
+			Input:    productionRef,
 			Expected: 3,
 		},
 		{
@@ -39,7 +56,7 @@ func TestStageIndex(t *testing.T) {
 		},
 	}
 
-	promoter := promotion.NewStagePromoter("test", []string{"main", "staging", "canary", "production"})
+	promoter := promotion.NewStagePromoter("test", []string{mainStage, stagingStage, canaryStage, productionStage})
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			assert.Equal(t, tc.Expected, promoter.StageIndex(tc.Input))
@@ -56,37 +73,37 @@ func TestIsPromotionRequest(t *testing.T) {
 	}{
 		{
 			Name:           "main_to_staging",
-			HeadRef:        "refs/heads/main",
-			BaseRef:        "refs/heads/staging",
+			HeadRef:        mainRef,
+			BaseRef:        stagingRef,
 			ValidPromotion: true,
 		},
 		{
 			Name:           "staging_to_canary",
-			HeadRef:        "refs/heads/staging",
-			BaseRef:        "refs/heads/canary",
+			HeadRef:        stagingRef,
+			BaseRef:        canaryRef,
 			ValidPromotion: true,
 		},
 		{
 			Name:           "canary_to_production",
-			HeadRef:        "refs/heads/canary",
-			BaseRef:        "refs/heads/production",
+			HeadRef:        canaryRef,
+			BaseRef:        productionRef,
 			ValidPromotion: true,
 		},
 		{
 			Name:           "invalid_stage",
 			HeadRef:        "refs/heads/feature",
-			BaseRef:        "refs/heads/production",
+			BaseRef:        productionRef,
 			ValidPromotion: false,
 		},
 		{
 			Name:           "invalid_order",
-			HeadRef:        "refs/heads/canary",
-			BaseRef:        "refs/heads/main",
+			HeadRef:        canaryRef,
+			BaseRef:        mainRef,
 			ValidPromotion: false,
 		},
 	}
 
-	promoter := promotion.NewStagePromoter("test", []string{"main", "staging", "canary", "production"})
+	promoter := promotion.NewStagePromoter("test", []string{mainStage, stagingStage, canaryStage, productionStage})
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			pr := &github.PullRequest{
@@ -111,20 +128,20 @@ func TestIsPromotableRef(t *testing.T) {
 	}{
 		{
 			Name:           "main_to_staging",
-			Ref:            "refs/heads/main",
-			ExpectedStage:  "staging",
+			Ref:            mainRef,
+			ExpectedStage:  stagingStage,
 			ExpectedResult: true,
 		},
 		{
 			Name:           "staging_to_canary",
-			Ref:            "refs/heads/staging",
-			ExpectedStage:  "canary",
+			Ref:            stagingRef,
+			ExpectedStage:  canaryStage,
 			ExpectedResult: true,
 		},
 		{
 			Name:           "canary_to_production",
-			Ref:            "refs/heads/canary",
-			ExpectedStage:  "production",
+			Ref:            canaryRef,
+			ExpectedStage:  productionStage,
 			ExpectedResult: true,
 		},
 		{
@@ -135,13 +152,13 @@ func TestIsPromotableRef(t *testing.T) {
 		},
 		{
 			Name:           "invalid_next_stage",
-			Ref:            "refs/heads/production",
+			Ref:            productionRef,
 			ExpectedStage:  "",
 			ExpectedResult: false,
 		},
 	}
 
-	promoter := promotion.NewStagePromoter("test", []string{"main", "staging", "canary", "production"})
+	promoter := promotion.NewStagePromoter("test", []string{mainStage, stagingStage, canaryStage, productionStage})
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			stage, result := promoter.IsPromotableRef(tc.Ref)
@@ -161,57 +178,57 @@ func TestNewDynamicPromoter(t *testing.T) {
 		{
 			Name: "valid_dynamic_promoter_1",
 			Properties: map[string]string{
-				"gitops-promotion-path": `main,staging,canary,production`,
+				promotionPathProperty: `main,staging,canary,production`,
 			},
-			PromoterKey:    "gitops-promotion-path",
-			ExpectedStages: []string{"main", "staging", "canary", "production"},
+			PromoterKey:    promotionPathProperty,
+			ExpectedStages: []string{mainStage, stagingStage, canaryStage, productionStage},
 		},
 		{
 			Name: "valid_dynamic_promoter_2",
 			Properties: map[string]string{
-				"gitops-promotion-path": `develop,main,staging,canary,production`,
+				promotionPathProperty: `develop,main,staging,canary,production`,
 			},
-			PromoterKey:    "gitops-promotion-path",
-			ExpectedStages: []string{"develop", "main", "staging", "canary", "production"},
+			PromoterKey:    promotionPathProperty,
+			ExpectedStages: []string{"develop", mainStage, stagingStage, canaryStage, productionStage},
 		},
 		{
 			Name: "valid_dynamic_promoter_single_stage",
 			Properties: map[string]string{
-				"gitops-promotion-path": `main`,
+				promotionPathProperty: mainStage,
 			},
-			PromoterKey:    "gitops-promotion-path",
-			ExpectedStages: []string{"main"},
+			PromoterKey:    promotionPathProperty,
+			ExpectedStages: []string{mainStage},
 		},
 		{
 			Name: "invalid_dynamic_promoter",
 			Properties: map[string]string{
-				"gitops-promotion-path": `main,staging,canary,production`,
+				promotionPathProperty: `main,staging,canary,production`,
 			},
 		},
 		{
 			Name:        "missing_promoter_key",
 			Properties:  map[string]string{},
-			PromoterKey: "gitops-promotion-path",
+			PromoterKey: promotionPathProperty,
 		},
 		{
 			Name: "valid_trailing_comma",
 			Properties: map[string]string{
-				"gitops-promotion-path": `main,develop,`,
+				promotionPathProperty: `main,develop,`,
 			},
-			PromoterKey:    "gitops-promotion-path",
-			ExpectedStages: []string{"main", "develop"},
+			PromoterKey:    promotionPathProperty,
+			ExpectedStages: []string{mainStage, "develop"},
 		},
 		{
 			Name: "empty_path",
 			Properties: map[string]string{
-				"gitops-promotion-path": ``,
+				promotionPathProperty: ``,
 			},
-			PromoterKey: "gitops-promotion-path",
+			PromoterKey: promotionPathProperty,
 		},
 		{
 			Name: "mismatched_promoter_key",
 			Properties: map[string]string{
-				"gitops-promotion-path": `main,staging,canary,production`,
+				promotionPathProperty: `main,staging,canary,production`,
 			},
 			PromoterKey: "gitops-promotion-path--invalid",
 		},
@@ -219,7 +236,7 @@ func TestNewDynamicPromoter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			promoter := promotion.NewDynamicPromoter(helpers.NewNoopLogger(), tc.Properties, tc.PromoterKey, "test")
+			promoter := promotion.NewDynamicPromoter(helpers.NewNoopLogger(), testCustomProperties(t, tc.Properties), tc.PromoterKey, "test")
 			if tc.ExpectedStages != nil {
 				assert.Equal(t, tc.ExpectedStages, promoter.Stages)
 			} else {
@@ -227,4 +244,16 @@ func TestNewDynamicPromoter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func testCustomProperties(t *testing.T, props map[string]string) models.CustomProperties {
+	t.Helper()
+
+	customProperties := make(models.CustomProperties, len(props))
+	for key, value := range props {
+		rawValue, err := json.Marshal(value)
+		require.NoError(t, err)
+		customProperties[key] = rawValue
+	}
+	return customProperties
 }

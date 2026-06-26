@@ -319,7 +319,7 @@ func (g *Controller) ListPullRequestCommits(pCtx *promotion.Context) ([]*github.
 func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest, error) {
 	pCtx := ctx.Context
 
-	draftMode := helpers.GetCustomProperty[bool](ctx.Repository.CustomProperties, config.Promotion.Push.CreatePullRequestInDraftModeKey)
+	draftMode := ctx.Repository.CustomProperties.Bool(config.Promotion.Push.CreatePullRequestInDraftModeKey)
 	pr, _, err := pCtx.ClientV3.PullRequests.Create(g.ctx, *pCtx.Owner, *pCtx.Repository, &github.NewPullRequest{
 		Title:               g.RequestTitle(*pCtx),
 		Head:                pCtx.HeadRef,
@@ -327,7 +327,6 @@ func (g *Controller) CreatePullRequest(ctx *promotion.Bus) (*github.PullRequest,
 		MaintainerCanModify: new(false),
 		Draft:               new(draftMode),
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +426,6 @@ func (g *Controller) SendPromotionFeedbackCommitStatus(bus *promotion.Bus, commi
 		slog.String("status", string(commitStatus)), slog.String("context", *contextValue), slog.String("msg", *msg),
 		slog.String("eventType", fmt.Sprintf("%T", pCtx.EventType)), slog.Any("error", bus.Error))
 	_, resp, err := pCtx.ClientV3.Repositories.CreateStatus(g.ctx, *pCtx.Owner, *pCtx.Repository, *pCtx.HeadSHA, status)
-
 	if err != nil {
 		var body []byte
 		if resp != nil && resp.Body != nil {
