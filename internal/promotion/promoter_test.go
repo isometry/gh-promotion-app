@@ -154,13 +154,13 @@ func TestIsPromotableRef(t *testing.T) {
 func TestNewDynamicPromoter(t *testing.T) {
 	testCases := []struct {
 		Name           string
-		Properties     map[string]string
+		Properties     map[string]any
 		PromoterKey    string
 		ExpectedStages []string
 	}{
 		{
 			Name: "valid_dynamic_promoter_1",
-			Properties: map[string]string{
+			Properties: map[string]any{
 				"gitops-promotion-path": `main,staging,canary,production`,
 			},
 			PromoterKey:    "gitops-promotion-path",
@@ -168,7 +168,7 @@ func TestNewDynamicPromoter(t *testing.T) {
 		},
 		{
 			Name: "valid_dynamic_promoter_2",
-			Properties: map[string]string{
+			Properties: map[string]any{
 				"gitops-promotion-path": `develop,main,staging,canary,production`,
 			},
 			PromoterKey:    "gitops-promotion-path",
@@ -176,26 +176,49 @@ func TestNewDynamicPromoter(t *testing.T) {
 		},
 		{
 			Name: "valid_dynamic_promoter_single_stage",
-			Properties: map[string]string{
+			Properties: map[string]any{
 				"gitops-promotion-path": `main`,
 			},
 			PromoterKey:    "gitops-promotion-path",
 			ExpectedStages: []string{"main"},
 		},
 		{
+			Name: "valid_dynamic_promoter_multi_select",
+			Properties: map[string]any{
+				"gitops-promotion-path": []any{"main", "staging", "production"},
+			},
+			PromoterKey:    "gitops-promotion-path",
+			ExpectedStages: []string{"main", "staging", "production"},
+		},
+		{
+			Name: "valid_dynamic_promoter_multi_select_single",
+			Properties: map[string]any{
+				"gitops-promotion-path": []any{"main"},
+			},
+			PromoterKey:    "gitops-promotion-path",
+			ExpectedStages: []string{"main"},
+		},
+		{
+			Name: "empty_multi_select",
+			Properties: map[string]any{
+				"gitops-promotion-path": []any{},
+			},
+			PromoterKey: "gitops-promotion-path",
+		},
+		{
 			Name: "invalid_dynamic_promoter",
-			Properties: map[string]string{
+			Properties: map[string]any{
 				"gitops-promotion-path": `main,staging,canary,production`,
 			},
 		},
 		{
 			Name:        "missing_promoter_key",
-			Properties:  map[string]string{},
+			Properties:  map[string]any{},
 			PromoterKey: "gitops-promotion-path",
 		},
 		{
 			Name: "valid_trailing_comma",
-			Properties: map[string]string{
+			Properties: map[string]any{
 				"gitops-promotion-path": `main,develop,`,
 			},
 			PromoterKey:    "gitops-promotion-path",
@@ -203,14 +226,14 @@ func TestNewDynamicPromoter(t *testing.T) {
 		},
 		{
 			Name: "empty_path",
-			Properties: map[string]string{
+			Properties: map[string]any{
 				"gitops-promotion-path": ``,
 			},
 			PromoterKey: "gitops-promotion-path",
 		},
 		{
 			Name: "mismatched_promoter_key",
-			Properties: map[string]string{
+			Properties: map[string]any{
 				"gitops-promotion-path": `main,staging,canary,production`,
 			},
 			PromoterKey: "gitops-promotion-path--invalid",
