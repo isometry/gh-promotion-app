@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
-	uGitHub "github.com/google/go-github/v84/github"
+	uGitHub "github.com/google/go-github/v88/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/aws"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github"
 	"github.com/isometry/gh-promotion-app/internal/controllers/github/event"
