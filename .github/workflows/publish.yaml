@@ -24,7 +24,7 @@ jobs:
           check-latest: true
 
       - name: Setup Ko
-        uses: ko-build/setup-ko@v0.9
+        uses: ko-build/setup-ko@v0.10
 
       - name: Run Ko
         run: |
