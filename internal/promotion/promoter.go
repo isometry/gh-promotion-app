@@ -37,35 +37,48 @@ func NewStagePromoter(class string, stages []string) *Promoter {
 	return &Promoter{Class: class, Stages: stages}
 }
 
-// NewDynamicPromoter creates a new promoter instance with the given stages.
-func NewDynamicPromoter(logger *slog.Logger, props map[string]string, promoterKey, promoterClassKey string) *Promoter {
-	stagesBlob, found := props[promoterKey]
-	stagesBlob = strings.TrimSpace(stagesBlob)
+// NewDynamicPromoter creates a new promoter instance from a repository's custom
+// properties. The promoter-path property may be either a multi_select list (whose
+// entries are used directly as ordered stages) or a single string of
+// comma-separated stages (retained for backward compatibility).
+func NewDynamicPromoter(logger *slog.Logger, props map[string]any, promoterKey, promoterClassKey string) *Promoter {
+	raw, found := props[promoterKey]
 	if !found {
 		logger.Warn("promoter key not found in properties. Defaulting to standard promoter...", slog.Any("key", promoterKey))
 		return _defaultPromoter
 	}
-	if stagesBlob == "" {
-		logger.Warn("promoter key found but empty. Defaulting to standard promoter...", slog.Any("key", promoterKey))
-		return _defaultPromoter
+
+	var stages []string
+	switch raw.(type) {
+	case []string, []any:
+		// multi_select: entries are the ordered stages.
+		stages = helpers.GetCustomProperty[[]string](props, promoterKey)
+	default:
+		// single value: comma-separated stages.
+		stagesBlob := strings.TrimSpace(helpers.GetCustomProperty[string](props, promoterKey))
+		if stagesBlob == "" {
+			logger.Warn("promoter key found but empty. Defaulting to standard promoter...", slog.Any("key", promoterKey))
+			return _defaultPromoter
+		}
+		if strings.HasSuffix(stagesBlob, ",") {
+			logger.Warn("promoter key found but trailing comma found. Removing...", slog.Any("key", promoterKey))
+			stagesBlob = strings.TrimSuffix(stagesBlob, ",")
+		}
+		stages = strings.Split(stagesBlob, ",")
 	}
 
-	if strings.HasSuffix(stagesBlob, ",") {
-		logger.Warn("promoter key found but trailing comma found. Removing...", slog.Any("key", promoterKey))
-		stagesBlob = strings.TrimSuffix(stagesBlob, ",")
+	for i, stage := range stages {
+		stages[i] = strings.TrimSpace(stage)
 	}
-
-	stages := strings.Split(stagesBlob, ",")
+	stages = slices.DeleteFunc(stages, func(s string) bool { return s == "" })
 	if len(stages) == 0 {
 		logger.Warn("promoter key found but no stages were defined. Defaulting to standard promoter...", slog.Any("key", promoterKey))
 		return _defaultPromoter
 	}
-	for i, stage := range stages {
-		stages[i] = strings.TrimSpace(stage)
-	}
+
 	logger.Debug("dynamic promoter stages loaded...", slog.Any("stages", stages))
 	class := defaultClass
-	if classValue, found := props[promoterClassKey]; found {
+	if classValue := helpers.GetCustomProperty[string](props, promoterClassKey); classValue != "" {
 		class = classValue
 	}
 	return NewStagePromoter(class, stages)
