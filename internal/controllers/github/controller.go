@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/gofri/go-github-ratelimit/v2/github_ratelimit"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v88/github"
 	"github.com/pkg/errors"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
@@ -28,8 +28,8 @@ import (
 	"github.com/isometry/gh-promotion-app/internal/promotion"
 	"github.com/isometry/gh-promotion-app/internal/validation"
 
-	"github.com/isometry/ghait/v84"
-	_ "github.com/isometry/ghait/v84/provider/aws" // enable AWS KMS provider
+	"github.com/isometry/ghait/v88"
+	_ "github.com/isometry/ghait/v88/provider/aws" // enable AWS KMS provider
 
 	_ "embed"
 )
@@ -183,7 +183,10 @@ func (g *Controller) GetGitHubClients(body []byte) (*Client, error) {
 		return nil, errors.New("no valid credentials found")
 	}
 	rateLimiter := github_ratelimit.NewClient(transport)
-	clientV3 := github.NewClient(rateLimiter)
+	clientV3, err := github.NewClient(github.WithHTTPClient(rateLimiter))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create github client")
+	}
 	clientV4 := githubv4.NewClient(rateLimiter)
 	// Persist cache entry
 	_clientCache[*installationID] = &Client{
